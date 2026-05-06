@@ -3,7 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useState,
+  useEffect,
+  useRef,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   GitBranch,
@@ -35,7 +44,15 @@ interface GithubComment {
   body: string;
   created_at: string;
   path?: string; // for review comments
-  position?: number; // for review comments
+  html_url?: string;
+  line?: number;
+  original_line?: number;
+  start_line?: number;
+  original_start_line?: number;
+  side?: "LEFT" | "RIGHT";
+  start_side?: "LEFT" | "RIGHT";
+  position?: number; // diff position, not a file line
+  original_position?: number;
 }
 
 interface ChangedFile {
@@ -78,6 +95,110 @@ interface RepoInfo {
 
 const DEFAULT_OWNER = "bniladridas";
 const DEFAULT_REPO = "diff";
+const ALERT_TYPES = {
+  NOTE: "border-sky-500/20 bg-sky-500/[0.06] text-sky-300",
+  TIP: "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-300",
+  IMPORTANT: "border-violet-500/20 bg-violet-500/[0.06] text-violet-300",
+  WARNING: "border-amber-500/20 bg-amber-500/[0.06] text-amber-300",
+  CAUTION: "border-rose-500/20 bg-rose-500/[0.06] text-rose-300",
+} as const;
+
+const formatReviewCommentLine = (comment: GithubComment) => {
+  const endLine = comment.line ?? comment.original_line;
+  const startLine = comment.start_line ?? comment.original_start_line;
+  const side = comment.side ?? comment.start_side;
+  const isOriginal = comment.line == null && comment.original_line != null;
+
+  if (startLine && endLine && startLine !== endLine) {
+    return `lines ${startLine}-${endLine}${side ? ` ${side.toLowerCase()}` : ""}${
+      isOriginal ? " original" : ""
+    }`;
+  }
+
+  if (endLine) {
+    return `line ${endLine}${side ? ` ${side.toLowerCase()}` : ""}${
+      isOriginal ? " original" : ""
+    }`;
+  }
+
+  if (comment.position) {
+    return `diff position ${comment.position}`;
+  }
+
+  return "file comment";
+};
+
+const getTextContent = (node: ReactNode): string => {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(getTextContent).join("");
+  }
+
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return getTextContent(node.props.children);
+  }
+
+  return "";
+};
+
+const stripAlertMarker = (node: ReactNode, marker: string): ReactNode => {
+  if (typeof node === "string") {
+    return node.replace(marker, "").replace(/^\s*\n?/, "");
+  }
+
+  if (Array.isArray(node)) {
+    let didStrip = false;
+    return node.map((child) => {
+      if (didStrip) return child;
+      const next = stripAlertMarker(child, marker);
+      didStrip = next !== child;
+      return next;
+    });
+  }
+
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return cloneElement(
+      node as ReactElement<{ children?: ReactNode }>,
+      undefined,
+      stripAlertMarker(node.props.children, marker),
+    );
+  }
+
+  return node;
+};
+
+const markdownComponents = {
+  blockquote({ children }: { children?: ReactNode }) {
+    const firstChild = Children.toArray(children)[0];
+    const firstText = getTextContent(firstChild).trimStart();
+    const match = firstText.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/);
+
+    if (!match) {
+      return (
+        <blockquote className="border-l border-white/20 pl-4 italic text-white/60">
+          {children}
+        </blockquote>
+      );
+    }
+
+    const alertType = match[1] as keyof typeof ALERT_TYPES;
+    const marker = match[0];
+
+    return (
+      <div className={cn("my-4 border-l-2 px-4 py-3", ALERT_TYPES[alertType])}>
+        <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.3em]">
+          {alertType}
+        </div>
+        <div className="text-white/75">
+          {stripAlertMarker(children, marker)}
+        </div>
+      </div>
+    );
+  },
+};
 
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
@@ -1133,7 +1254,10 @@ export default function App() {
                       {/* PR Description */}
                       <section className="space-y-8">
                         <div className="bg-white/[0.02] border border-white/5 p-8 lg:p-12 prose prose-invert prose-orange max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={markdownComponents}
+                          >
                             {selectedPull.body || "_No description provided._"}
                           </ReactMarkdown>
                         </div>
@@ -1171,7 +1295,10 @@ export default function App() {
                                     </span>
                                   </div>
                                   <div className="prose prose-invert prose-sm max-w-none opacity-80 leading-relaxed">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    <ReactMarkdown
+                                      remarkPlugins={[remarkGfm]}
+                                      components={markdownComponents}
+                                    >
                                       {comment.body}
                                     </ReactMarkdown>
                                   </div>
@@ -1204,9 +1331,14 @@ export default function App() {
                                       {comment.path}
                                     </span>
                                   </div>
-                                  <span className="text-[10px] opacity-30 font-mono italic">
-                                    line {comment.position}
-                                  </span>
+                                  <a
+                                    href={comment.html_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[10px] opacity-30 hover:opacity-70 font-mono italic transition-opacity"
+                                  >
+                                    {formatReviewCommentLine(comment)}
+                                  </a>
                                 </div>
                                 <div className="flex gap-6">
                                   <img
@@ -1228,6 +1360,7 @@ export default function App() {
                                     <div className="prose prose-invert prose-sm max-w-none opacity-70">
                                       <ReactMarkdown
                                         remarkPlugins={[remarkGfm]}
+                                        components={markdownComponents}
                                       >
                                         {comment.body}
                                       </ReactMarkdown>
