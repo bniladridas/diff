@@ -825,7 +825,7 @@ export default function App() {
                       </span>
                       <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
-                    
+
                     <div className="flex items-center gap-2 ml-2">
                       {(currentOwner !== defaultRepo.owner ||
                         currentRepo !== defaultRepo.repo) && (
@@ -852,7 +852,7 @@ export default function App() {
                           </button>
                         </>
                       )}
-                      
+
                       {(defaultRepo.owner !== SYSTEM_OWNER || defaultRepo.repo !== SYSTEM_REPO) && (
                          <button
                          onClick={() => {
