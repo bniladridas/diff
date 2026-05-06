@@ -613,62 +613,45 @@ export default function App() {
     setCheckRuns([]);
     setActiveTab("diff");
     try {
-      const filesRes = await fetch(
-        `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
-      );
-      if (repoKeyRef.current !== requestKey) return;
-      if (filesRes.ok) {
-        const data = await filesRes.json();
-        if (repoKeyRef.current !== requestKey) return;
-        setFiles(data);
-        if (data.length > 0) {
-          setSelectedFile(data[0]);
-        }
-      }
-    } catch (err) {
-      if (repoKeyRef.current !== requestKey) return;
-      console.error("Files fetch error:", err);
-    } finally {
-      if (repoKeyRef.current === requestKey) {
-        setLoadingFiles(false);
-      }
-    }
-
-    // Fetch Comments
-    try {
-      const [commentsRes, reviewCommentsRes] = await Promise.all([
+      const [filesRes, commentsRes, reviewCommentsRes, checksRes] = await Promise.all([
+        fetch(
+          `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
         fetch(
           `/api/pulls/${pull.number}/comments?owner=${currentOwner}&repo=${currentRepo}`,
         ),
         fetch(
           `/api/pulls/${pull.number}/review-comments?owner=${currentOwner}&repo=${currentRepo}`,
         ),
+        fetch(
+          `/api/pulls/${pull.number}/checks?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
       ]);
 
       if (repoKeyRef.current !== requestKey) return;
-      if (commentsRes.ok) setComments(await commentsRes.json());
-      if (repoKeyRef.current !== requestKey) return;
-      if (reviewCommentsRes.ok)
-        setReviewComments(await reviewCommentsRes.json());
-    } catch (err) {
-      if (repoKeyRef.current !== requestKey) return;
-      console.error("Comments fetch error:", err);
-    }
 
-    // Fetch Checks
-    try {
-      const checksRes = await fetch(
-        `/api/pulls/${pull.number}/checks?owner=${currentOwner}&repo=${currentRepo}`,
-      );
-      if (repoKeyRef.current !== requestKey) return;
+      // Process Files
+      if (filesRes.ok) {
+        const data = await filesRes.json();
+        setFiles(data);
+        if (data.length > 0) setSelectedFile(data[0]);
+      }
+
+      // Process Comments
+      if (commentsRes.ok) setComments(await commentsRes.json());
+      if (reviewCommentsRes.ok) setReviewComments(await reviewCommentsRes.json());
+
+      // Process Checks
       if (checksRes.ok) {
         const data = await checksRes.json();
         setCheckRuns(data.check_runs || []);
       }
     } catch (err) {
-      console.error("Checks fetch error:", err);
+      if (repoKeyRef.current !== requestKey) return;
+      console.error("PR data fetch error:", err);
     } finally {
       if (repoKeyRef.current === requestKey) {
+        setLoadingFiles(false);
         setLoadingComments(false);
       }
     }

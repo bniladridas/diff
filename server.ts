@@ -134,15 +134,19 @@ async function startServer() {
       };
 
       // Fetch both (merging them gives a more complete picture of PR status)
-      const headData = await fetchForSha(headSha);
-      let mergeData = { checks: [], statuses: [] };
-      if (mergeSha && mergeSha !== headSha) {
-        try {
-          mergeData = await fetchForSha(mergeSha);
-        } catch (e) {
-          // Ignore errors for merge commit if it's not yet available or failed
-        }
-      }
+      const [headData, mergeData] = await Promise.all([
+        fetchForSha(headSha),
+        (async () => {
+          if (mergeSha && mergeSha !== headSha) {
+            try {
+              return await fetchForSha(mergeSha);
+            } catch (e) {
+              return { checks: [], statuses: [] };
+            }
+          }
+          return { checks: [], statuses: [] };
+        })()
+      ]);
 
       // Deduplicate by name/context
       const uniqueChecks = new Map();
