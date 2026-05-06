@@ -24,6 +24,7 @@ import 'prismjs/components/prism-diff';
 import 'prismjs/themes/prism-tomorrow.css';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import version from '/VERSION?raw';
 
 interface GithubComment {
   id: number;
@@ -276,7 +277,7 @@ export default function App() {
               <div>
                 <h1 className="text-xl lg:text-2xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
-                  <span className="text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">v0.1.0</span>
+                  <span className="text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">v{version}</span>
                 </h1>
               </div>
             </div>

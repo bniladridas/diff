@@ -9,8 +9,6 @@ The project incorporates a robust continuous integration pipeline and pre-commit
 ## Screenshots
 
 <div align="center">
-  <img src="src/assets/Screenshot 2026-05-06 at 7.28.11 AM.png" alt="DIFF Main View" style="border-radius: 12px; max-width: 100%; height: auto; border: 1px solid rgba(255,255,255,0.1);" />
-  <br /><br />
   <img src="src/assets/Screenshot 2026-05-06 at 7.28.44 AM.png" alt="DIFF Code Review" style="border-radius: 12px; max-width: 100%; height: auto; border: 1px solid rgba(255,255,255,0.1);" />
 </div>
 
