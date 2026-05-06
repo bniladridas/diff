@@ -97,8 +97,8 @@ interface DiffRow {
   newLine: number | null;
 }
 
-const DEFAULT_OWNER = "bniladridas";
-const DEFAULT_REPO = "diff";
+const DEFAULT_OWNER = "harpertoken";
+const DEFAULT_REPO = "harper";
 const ALERT_TYPES = {
   NOTE: "border-sky-500/20 bg-sky-500/[0.06] text-sky-300",
   TIP: "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-300",
@@ -745,7 +745,7 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="hidden lg:flex items-center gap-12 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40">
               <a
-                href="https://github.com/bniladridas/diff"
+                href="https://github.com/harpertoken/harper"
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2 hover:text-white transition-colors"
