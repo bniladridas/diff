@@ -5,12 +5,10 @@
 
 import {
   Children,
-  cloneElement,
   isValidElement,
   useState,
   useEffect,
   useRef,
-  type ReactElement,
   type ReactNode,
 } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -146,36 +144,14 @@ const getTextContent = (node: ReactNode): string => {
   return "";
 };
 
-const stripAlertMarker = (node: ReactNode, marker: string): ReactNode => {
-  if (typeof node === "string") {
-    return node.replace(marker, "").replace(/^\s*\n?/, "");
-  }
-
-  if (Array.isArray(node)) {
-    let didStrip = false;
-    return node.map((child) => {
-      if (didStrip) return child;
-      const next = stripAlertMarker(child, marker);
-      didStrip = next !== child;
-      return next;
-    });
-  }
-
-  if (isValidElement<{ children?: ReactNode }>(node)) {
-    return cloneElement(
-      node as ReactElement<{ children?: ReactNode }>,
-      undefined,
-      stripAlertMarker(node.props.children, marker),
-    );
-  }
-
-  return node;
-};
+const normalizeAlertMarkdown = (node: ReactNode) =>
+  getTextContent(node).replace(ALERT_MARKER_PATTERN, "").trim();
 
 const markdownComponents = {
   blockquote({ children }: { children?: ReactNode }) {
-    const firstChild = Children.toArray(children)[0];
-    const firstText = getTextContent(firstChild).trimStart();
+    const firstText = Children.toArray(children)
+      .map((child) => getTextContent(child).trimStart())
+      .find((text) => text.length > 0) ?? "";
     const match = firstText.match(ALERT_MARKER_PATTERN);
 
     if (!match) {
@@ -187,15 +163,18 @@ const markdownComponents = {
     }
 
     const alertType = (match[1] ?? match[2]).toUpperCase() as keyof typeof ALERT_TYPES;
-    const marker = match[0];
-
     return (
       <div className={cn("my-4 border-l-2 px-4 py-3", ALERT_TYPES[alertType])}>
         <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.3em]">
           {alertType}
         </div>
         <div className="text-white/75">
-          {stripAlertMarker(children, marker)}
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={markdownComponents}
+          >
+            {normalizeAlertMarkdown(children)}
+          </ReactMarkdown>
         </div>
       </div>
     );
@@ -468,7 +447,7 @@ export default function App() {
         }
         if (message.includes("rate limit")) {
           throw new Error(
-            "GitHub API rate limit exceeded. Please add a GITHUB_TOKEN to secrets to increase limits.",
+            "GitHub API rate limit exceeded. Add a GITHUB_TOKEN in your local .env or shell environment to increase limits.",
           );
         }
         throw new Error(message);
