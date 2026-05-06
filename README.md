@@ -4,8 +4,8 @@
 |-------------|-------------|
 | Name | DIFF |
 | Version | v0.1.0 |
-| Product Of | harpertoken |
-| Repository | harper |
+| Product Of | [harpertoken](https://github.com/harpertoken) |
+| Repository | [harper](https://github.com/harpertoken/harper) |
 | Description | Pull request review tool |
 | Architecture | React, Tailwind CSS, GitHub API |
 | Features | Dual-pane, syntax highlighting, real-time diff |
