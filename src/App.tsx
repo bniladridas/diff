@@ -78,8 +78,8 @@ interface RepoInfo {
 
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
-  const [currentOwner, setCurrentOwner] = useState("bniladridas");
-  const [currentRepo, setCurrentRepo] = useState("diff");
+  const [currentOwner, setCurrentOwner] = useState("harpertoken");
+  const [currentRepo, setCurrentRepo] = useState("harper");
   const [showRepoInput, setShowRepoInput] = useState(false);
   const [inputRepo, setInputRepo] = useState("");
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
