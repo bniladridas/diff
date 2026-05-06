@@ -25,6 +25,11 @@ import {
   Hash,
   Maximize2,
   Minimize2,
+  CheckCircle2,
+  XCircle,
+  Circle,
+  Clock,
+  CircleSlash,
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -74,6 +79,13 @@ interface PullRequest {
   body: string;
   html_url: string;
   state: string;
+  draft?: boolean;
+  base?: {
+    ref: string;
+  };
+  head?: {
+    ref: string;
+  };
 }
 
 interface Branch {
@@ -275,6 +287,16 @@ const markdownComponents = {
   },
 };
 
+interface CheckRun {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  html_url: string;
+  description?: string;
+  type?: "check_run" | "status";
+}
+
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
   const [defaultRepo, setDefaultRepo] = useState(() => {
@@ -301,6 +323,7 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState<ChangedFile | null>(null);
   const [comments, setComments] = useState<GithubComment[]>([]);
   const [reviewComments, setReviewComments] = useState<GithubComment[]>([]);
+  const [checkRuns, setCheckRuns] = useState<CheckRun[]>([]);
   const [activeTab, setActiveTab] = useState<"diff" | "discussion">("diff");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -326,6 +349,13 @@ export default function App() {
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
   const diffRows = parseDiffRows(selectedFile?.patch);
+
+  const scrollToSection = (id: string) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth" });
+    }
+  };
 
   useEffect(() => {
     repoKeyRef.current = `${currentOwner}/${currentRepo}`;
@@ -580,9 +610,8 @@ export default function App() {
     setSelectedFile(null);
     setComments([]);
     setReviewComments([]);
+    setCheckRuns([]);
     setActiveTab("diff");
-
-    // Fetch Files
     try {
       const filesRes = await fetch(
         `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
@@ -624,6 +653,20 @@ export default function App() {
     } catch (err) {
       if (repoKeyRef.current !== requestKey) return;
       console.error("Comments fetch error:", err);
+    }
+
+    // Fetch Checks
+    try {
+      const checksRes = await fetch(
+        `/api/pulls/${pull.number}/checks?owner=${currentOwner}&repo=${currentRepo}`,
+      );
+      if (repoKeyRef.current !== requestKey) return;
+      if (checksRes.ok) {
+        const data = await checksRes.json();
+        setCheckRuns(data.check_runs || []);
+      }
+    } catch (err) {
+      console.error("Checks fetch error:", err);
     } finally {
       if (repoKeyRef.current === requestKey) {
         setLoadingComments(false);
@@ -708,7 +751,7 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="hidden lg:flex items-center gap-12 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40">
               <a
-                href="https://github.com/harpertoken/harper"
+                href="https://github.com/bniladridas/diff"
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2 hover:text-white transition-colors"
@@ -994,6 +1037,11 @@ export default function App() {
                             <div className="flex items-center justify-between text-[10px] font-mono opacity-40">
                               <span className="flex items-center gap-2">
                                 #{pull.number}
+                                {pull.draft && (
+                                  <span className="text-[8px] font-mono px-1 border border-white/10 bg-white/5 opacity-40 uppercase tracking-widest leading-tight">
+                                    Draft
+                                  </span>
+                                )}
                               </span>
                               <span className="hidden sm:block">
                                 {new Date(pull.created_at).toLocaleDateString()}
@@ -1120,7 +1168,7 @@ export default function App() {
           <div className={cn(
             "absolute left-1/2 -translate-x-1/2 w-px h-full bg-white/5 group-hover:bg-brand-orange transition-colors",
             isResizing && "bg-brand-orange w-0.5",
-            isSidebarHidden && "bg-brand-orange/30 group-hover:bg-brand-orange"
+            isSidebarHidden && "bg-white/10 group-hover:bg-brand-orange"
           )} />
         </div>
 
@@ -1151,18 +1199,75 @@ export default function App() {
                     <h2 className="text-3xl sm:text-4xl lg:text-6xl font-serif italic tracking-tighter leading-[1] lg:leading-[0.9] break-words">
                       {selectedPull ? selectedPull.title : selectedBranch!.name}
                     </h2>
-                    <div className="flex flex-wrap gap-6 lg:gap-8 items-center pt-4">
-                      {selectedPull && (
+                      <div className="flex flex-wrap gap-6 lg:gap-8 items-center pt-4">
+                        {selectedPull && (
+                          <div className="flex flex-col gap-1">
+                            <p className="text-sm font-mono text-brand-orange flex items-center gap-2">
+                              #{selectedPull.number}
+                              {selectedPull.draft && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 border border-white/10 bg-white/5 opacity-40 uppercase tracking-widest">
+                                  Draft
+                                </span>
+                              )}
+                            </p>
+                            {selectedPull.base && selectedPull.head && (
+                              <div className="flex items-center gap-2 text-[10px] font-mono opacity-40">
+                                <span className="px-1 border border-white/10">{selectedPull.base.ref}</span>
+                                <ChevronRight className="w-3 h-3" />
+                                <span className="px-1 border border-white/10 text-brand-orange/60">{selectedPull.head.ref}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {selectedPull && (
+                          <div className="w-[1px] h-8 bg-white/10 hidden sm:block" />
+                        )}
+
+                        {selectedPull && checkRuns.length > 0 && (
+                          <>
+                            <button
+                              onClick={() => scrollToSection("ci-pipeline")}
+                              className="flex items-center gap-2 hover:bg-white/5 p-1 -m-1 transition-all rounded group"
+                            >
+                              {(() => {
+                                const stats = checkRuns.reduce(
+                                  (acc, run) => {
+                                    if (run.status !== "completed") acc.pending++;
+                                    else if (run.conclusion === "success") acc.success++;
+                                    else if (run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "action_required" || run.conclusion === "startup_failure" || run.conclusion === "stale") acc.failure++;
+                                    else if (run.conclusion === "cancelled") acc.cancelled++;
+                                    else if (run.conclusion === "skipped") acc.skipped++;
+                                    else acc.other++;
+                                    return acc;
+                                  },
+                                  { success: 0, failure: 0, pending: 0, cancelled: 0, skipped: 0, other: 0 }
+                                );
+
+                                if (stats.failure > 0) return <XCircle className="w-5 h-5 text-rose-500" />;
+                                if (stats.cancelled > 0) return <CircleSlash className="w-5 h-5 text-orange-500" />;
+                                if (stats.pending > 0) return <RefreshCw className="w-5 h-5 text-amber-500 animate-spin" />;
+                                if (stats.success === checkRuns.length - stats.skipped) return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
+                                return <Circle className="w-5 h-5 text-white/20" />;
+                              })()}
+
+                              <div className="flex flex-col text-left">
+                                <span className="text-[8px] uppercase tracking-widest opacity-40 font-bold group-hover:opacity-60">Checks</span>
+                                <span className={cn(
+                                  "text-[10px] font-mono",
+                                  checkRuns.every(r => r.conclusion === "success" || r.conclusion === "skipped") ? "text-emerald-500" :
+                                  checkRuns.some(r => r.conclusion === "failure" || r.conclusion === "timed_out" || r.conclusion === "startup_failure") ? "text-rose-500" :
+                                  checkRuns.some(r => r.conclusion === "cancelled") ? "text-orange-500" :
+                                  "text-amber-500"
+                                )}>
+                                  {checkRuns.filter(r => r.conclusion === "success").length}/{checkRuns.length} Passed
+                                </span>
+                              </div>
+                            </button>
+                            <div className="w-[1px] h-8 bg-white/10 hidden sm:block" />
+                          </>
+                        )}
+
                         <div className="space-y-1">
-                          <p className="text-sm font-mono text-brand-orange">
-                            #{selectedPull.number}
-                          </p>
-                        </div>
-                      )}
-                      {selectedPull && (
-                        <div className="w-[1px] h-8 bg-white/10 hidden sm:block" />
-                      )}
-                      <div className="space-y-1">
                         <p className="text-sm font-serif italic opacity-40">
                           {selectedPull
                             ? new Date(
@@ -1402,6 +1507,84 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      {/* CI Checks List */}
+                      {selectedPull && checkRuns.length > 0 && (
+                        <section id="ci-pipeline" className="space-y-8 scroll-mt-24">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <Activity className="w-5 h-5 text-brand-orange" />
+                              <h3 className="text-sm font-bold uppercase tracking-[0.3em]">
+                                CI Pipeline Status
+                              </h3>
+                            </div>
+                            <span className="text-[10px] font-mono opacity-20 uppercase">
+                              {checkRuns.length} Total Checks
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {checkRuns.map((run) => (
+                              <a
+                                key={run.id}
+                                href={run.html_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center justify-between p-4 border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group"
+                              >
+                                <div className="flex items-center gap-4 min-w-0">
+                                  {run.status === "completed" ? (
+                                    run.conclusion === "success" ? (
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                                    ) : (run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "action_required" || run.conclusion === "startup_failure" || run.conclusion === "stale") ? (
+                                      <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                                    ) : run.conclusion === "cancelled" ? (
+                                      <CircleSlash className="w-4 h-4 text-white/40 shrink-0" />
+                                    ) : run.conclusion === "skipped" ? (
+                                      <CircleSlash className="w-4 h-4 text-white/20 shrink-0" />
+                                    ) : (
+                                      <Circle className="w-4 h-4 text-white/20 shrink-0" />
+                                    )
+                                  ) : (
+                                    <RefreshCw className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
+                                  )}
+                                    <div className="flex flex-col min-w-0">
+                                      <span className="text-[10px] font-bold uppercase tracking-widest text-white/60 group-hover:text-white transition-colors truncate">
+                                        {run.name}
+                                      </span>
+                                      {run.description && (
+                                        <span className="text-[9px] text-white/30 truncate max-w-md">
+                                          {run.description}
+                                        </span>
+                                      )}
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className={cn(
+                                          "text-[8px] font-mono px-1 border uppercase",
+                                          run.status === "completed"
+                                            ? "opacity-20 border-white/5"
+                                            : "text-amber-500 border-amber-500/20 bg-amber-500/5 animate-pulse"
+                                        )}>
+                                          {run.status}
+                                        </span>
+                                        {run.conclusion && (
+                                          <span className={cn(
+                                            "text-[8px] font-mono px-1 border uppercase",
+                                            run.conclusion === "success" ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/5" :
+                                            (run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "startup_failure") ? "text-rose-500 border-rose-500/20 bg-rose-500/5" :
+                                            run.conclusion === "cancelled" ? "text-orange-500 border-orange-500/20 bg-orange-500/5" :
+                                            "opacity-40 border-white/10"
+                                          )}>
+                                            {run.conclusion}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                </div>
+                                <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-20 transition-all ml-4 shrink-0" />
+                              </a>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+
                       {/* PR Description */}
                       <section className="space-y-8">
                         <div className="bg-white/[0.02] border border-white/5 p-8 lg:p-12 prose prose-invert prose-orange max-w-none">

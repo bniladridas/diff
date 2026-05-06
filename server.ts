@@ -105,6 +105,84 @@ async function startServer() {
     }
   });
 
+  app.get("/api/pulls/:number/checks", async (req, res) => {
+    try {
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+
+      const prResponse = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
+        { headers: getHeaders("application/vnd.github.v3+json") },
+      );
+
+      const headSha = prResponse.data.head.sha;
+      const mergeSha = prResponse.data.merge_commit_sha;
+
+      // Fetch checks for a specific SHA
+      const fetchForSha = async (sha: string) => {
+        const [checks, statuses] = await Promise.all([
+          axios.get(
+            `https://api.github.com/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=100`,
+            { headers: getHeaders("application/vnd.github.v3+json") },
+          ),
+          axios.get(
+            `https://api.github.com/repos/${owner}/${repo}/commits/${sha}/statuses?per_page=100`,
+            { headers: getHeaders("application/vnd.github.v3+json") },
+          )
+        ]);
+        return { checks: checks.data.check_runs || [], statuses: statuses.data || [] };
+      };
+
+      // Fetch both (merging them gives a more complete picture of PR status)
+      const headData = await fetchForSha(headSha);
+      let mergeData = { checks: [], statuses: [] };
+      if (mergeSha && mergeSha !== headSha) {
+        try {
+          mergeData = await fetchForSha(mergeSha);
+        } catch (e) {
+          // Ignore errors for merge commit if it's not yet available or failed
+        }
+      }
+
+      // Deduplicate by name/context
+      const uniqueChecks = new Map();
+      const uniqueStatuses = new Map();
+
+      // Process merge commit first as it often represents the final "truth" for PRs
+      [...mergeData.checks, ...headData.checks].forEach((c: any) => {
+        if (!uniqueChecks.has(c.name)) {
+          uniqueChecks.set(c.name, { ...c, type: "check_run" });
+        }
+      });
+
+      [...mergeData.statuses, ...headData.statuses].forEach((s: any) => {
+        if (!uniqueStatuses.has(s.context)) {
+          uniqueStatuses.set(s.context, {
+            id: s.id,
+            name: s.context || "Commit Status",
+            status: s.state === "pending" ? "in_progress" : "completed",
+            conclusion: s.state === "success" ? "success" :
+                       (s.state === "failure" || s.state === "error") ? "failure" :
+                       s.state === "pending" ? null : "other",
+            html_url: s.target_url,
+            description: s.description,
+            avatar_url: s.avatar_url,
+            type: "status"
+          });
+        }
+      });
+
+      const allChecks = [
+        ...Array.from(uniqueChecks.values()),
+        ...Array.from(uniqueStatuses.values())
+      ];
+
+      res.json({ check_runs: allChecks });
+    } catch (error: any) {
+      handleError(res, error, "Checks");
+    }
+  });
+
   app.get("/api/branches", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
