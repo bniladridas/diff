@@ -10,7 +10,8 @@
 | Architecture | React, Tailwind CSS, GitHub API |
 | Features | Dual-pane, syntax highlighting, real-time diff |
 | CI | TS check, YAML lint, pre-commit |
-| Limitations | Browser-based, requires GitHub API config |
+| Desktop | Sidebar, full diff view |
+| Mobile | Responsive, touch-friendly |
 
 ## Screenshot
 
