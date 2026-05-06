@@ -1226,7 +1226,10 @@ export default function App() {
                         {selectedPull && checkRuns.length > 0 && (
                           <>
                             <button
-                              onClick={() => scrollToSection("ci-pipeline")}
+                              onClick={() => {
+                                setActiveTab("discussion");
+                                setTimeout(() => scrollToSection("ci-pipeline"), 100);
+                              }}
                               className="flex items-center gap-2 hover:bg-white/5 p-1 -m-1 transition-all rounded group"
                             >
                               {(() => {
