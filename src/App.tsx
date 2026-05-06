@@ -97,8 +97,8 @@ interface DiffRow {
   newLine: number | null;
 }
 
-const DEFAULT_OWNER = "harpertoken";
-const DEFAULT_REPO = "harper";
+const SYSTEM_OWNER = "harpertoken";
+const SYSTEM_REPO = "harper";
 const ALERT_TYPES = {
   NOTE: "border-sky-500/20 bg-sky-500/[0.06] text-sky-300",
   TIP: "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-300",
@@ -277,8 +277,19 @@ const markdownComponents = {
 
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
-  const [currentOwner, setCurrentOwner] = useState("harpertoken");
-  const [currentRepo, setCurrentRepo] = useState("harper");
+  const [defaultRepo, setDefaultRepo] = useState(() => {
+    const saved = localStorage.getItem("diff_default_repo");
+    if (saved) {
+      try {
+        return JSON.parse(saved) as { owner: string; repo: string };
+      } catch {
+        return { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
+      }
+    }
+    return { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
+  });
+  const [currentOwner, setCurrentOwner] = useState(defaultRepo.owner);
+  const [currentRepo, setCurrentRepo] = useState(defaultRepo.repo);
   const [showRepoInput, setShowRepoInput] = useState(false);
   const [inputRepo, setInputRepo] = useState("");
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
@@ -690,63 +701,6 @@ export default function App() {
                     v0.1.0
                   </span>
                 </h1>
-                <div className="flex items-center gap-1.5 lg:gap-2 mt-0.5 lg:mt-1 min-w-0">
-                  {showRepoInput ? (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="flex items-center gap-2"
-                    >
-                      <input
-                        type="text"
-                        value={inputRepo}
-                        onChange={(e) => setInputRepo(e.target.value)}
-                        onBlur={() => {
-                          if (!inputRepo) setShowRepoInput(false);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const [owner, repo] = inputRepo.split("/");
-                            if (owner && repo) {
-                              switchRepo(owner, repo);
-                              setShowRepoInput(false);
-                            }
-                          } else if (e.key === "Escape") {
-                            setShowRepoInput(false);
-                          }
-                        }}
-                        autoFocus
-                        placeholder="owner/repo"
-                        className="bg-black/40 border border-brand-orange/20 px-2 py-0.5 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-28 sm:w-32"
-                      />
-                    </motion.div>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setInputRepo(`${currentOwner}/${currentRepo}`);
-                        setShowRepoInput(true);
-                      }}
-                      className="text-[9px] lg:text-[10px] font-mono opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1 group min-w-0 max-w-[120px] sm:max-w-none"
-                    >
-                      <Hash className="w-2.5 h-2.5 shrink-0" />
-                      <span className="truncate">
-                        {currentOwner}/{currentRepo}
-                      </span>
-                      <RefreshCw className="hidden sm:block w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </button>
-                  )}
-                  {(currentOwner !== DEFAULT_OWNER ||
-                    currentRepo !== DEFAULT_REPO) && (
-                    <button
-                      onClick={() => {
-                        switchRepo(DEFAULT_OWNER, DEFAULT_REPO);
-                      }}
-                      className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white/40 transition-colors shrink-0"
-                    >
-                      [Default]
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -825,6 +779,99 @@ export default function App() {
         >
           <div className="flex flex-col h-full overflow-hidden w-[280px] sm:w-[320px] lg:w-[var(--sidebar-width)]">
             <div className="p-4 lg:p-6 border-b border-white/5 pb-0">
+              {/* Repository Switcher moved here */}
+              <div className="flex items-center gap-1.5 lg:gap-2 mb-4 min-w-0">
+                {showRepoInput ? (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex-1 flex items-center"
+                  >
+                    <input
+                      type="text"
+                      value={inputRepo}
+                      onChange={(e) => setInputRepo(e.target.value)}
+                      onBlur={() => {
+                        if (!inputRepo) setShowRepoInput(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const [owner, repo] = inputRepo.split("/");
+                          if (owner && repo) {
+                            switchRepo(owner, repo);
+                            setShowRepoInput(false);
+                          }
+                        } else if (e.key === "Escape") {
+                          setShowRepoInput(false);
+                        }
+                      }}
+                      autoFocus
+                      placeholder="owner/repo"
+                      className="bg-black/40 border border-brand-orange/20 px-2 py-1 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-full"
+                    />
+                  </motion.div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-between min-w-0">
+                    <button
+                      onClick={() => {
+                        setInputRepo(`${currentOwner}/${currentRepo}`);
+                        setShowRepoInput(true);
+                      }}
+                      className="text-[9px] lg:text-[10px] font-mono whitespace-nowrap opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1 group min-w-0 overflow-hidden"
+                    >
+                      <Hash className="w-2.5 h-2.5 shrink-0" />
+                      <span className="truncate">
+                        {currentOwner}/{currentRepo}
+                      </span>
+                      <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                    
+                    <div className="flex items-center gap-2 ml-2">
+                      {(currentOwner !== defaultRepo.owner ||
+                        currentRepo !== defaultRepo.repo) && (
+                        <>
+                          <button
+                            onClick={() => {
+                              const newDefault = { owner: currentOwner, repo: currentRepo };
+                              setDefaultRepo(newDefault);
+                              localStorage.setItem("diff_default_repo", JSON.stringify(newDefault));
+                            }}
+                            className="text-[8px] uppercase tracking-widest text-brand-orange/40 hover:text-brand-orange transition-colors shrink-0"
+                            title="Set as your default repository"
+                          >
+                            [Set Default]
+                          </button>
+                          <button
+                            onClick={() => {
+                              switchRepo(defaultRepo.owner, defaultRepo.repo);
+                            }}
+                            className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white/40 transition-colors shrink-0"
+                            title={`Reset to default (${defaultRepo.owner}/${defaultRepo.repo})`}
+                          >
+                            [Reset]
+                          </button>
+                        </>
+                      )}
+                      
+                      {(defaultRepo.owner !== SYSTEM_OWNER || defaultRepo.repo !== SYSTEM_REPO) && (
+                         <button
+                         onClick={() => {
+                           const systemDefault = { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
+                           setDefaultRepo(systemDefault);
+                           localStorage.removeItem("diff_default_repo");
+                           switchRepo(SYSTEM_OWNER, SYSTEM_REPO);
+                         }}
+                         className="text-[8px] uppercase tracking-widest text-rose-500/30 hover:text-rose-500/60 transition-colors shrink-0"
+                         title="Clear custom default and reset to system default"
+                       >
+                         [Clear]
+                       </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-4 border-b border-white/5">
                 <button
                   onClick={() => setViewMode("pulls")}
@@ -970,7 +1017,7 @@ export default function App() {
                                 alt=""
                                 className="w-5 h-5 grayscale opacity-50 group-hover:opacity-100 transition-opacity border border-white/10"
                               />
-                              <span className="text-[9px] lg:text-[10px] uppercase tracking-widest opacity-40 group-hover:opacity-80 transition-opacity font-bold">
+                              <span className="text-[9px] lg:text-[10px] tracking-widest opacity-40 group-hover:opacity-80 transition-opacity font-bold">
                                 {pull.user.login}
                               </span>
                             </div>
@@ -1389,8 +1436,8 @@ export default function App() {
                                   className="w-10 h-10 border border-white/10 shrink-0"
                                 />
                                 <div className="space-y-4 flex-1">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[10px] uppercase tracking-widest font-bold text-brand-orange">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
+                                    <span className="text-[10px] tracking-widest font-bold text-brand-orange">
                                       {comment.user.login}
                                     </span>
                                     <span className="text-[10px] opacity-30 font-mono italic">
@@ -1453,8 +1500,8 @@ export default function App() {
                                     className="w-10 h-10 border border-white/10 shrink-0"
                                   />
                                   <div className="space-y-4 flex-1">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[10px] uppercase tracking-widest font-bold text-white/50">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
+                                      <span className="text-[10px] tracking-widest font-bold text-white/50">
                                         {comment.user.login}
                                       </span>
                                       <span className="text-[10px] opacity-30 font-mono">
