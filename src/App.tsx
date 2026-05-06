@@ -25,8 +25,6 @@ import 'prismjs/themes/prism-tomorrow.css';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const version = import.meta.env.VITE_APP_VERSION;
-
 interface GithubComment {
   id: number;
   user: {
@@ -278,7 +276,7 @@ export default function App() {
               <div>
                 <h1 className="text-xl lg:text-2xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
-                  <span className="text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">v{version}</span>
+                  <span className="text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">v0.1.0</span>
                 </h1>
               </div>
             </div>
@@ -286,7 +284,7 @@ export default function App() {
 
           <div className="flex items-center gap-6">
             <div className="hidden lg:flex items-center gap-12 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40">
-              <a href="https://github.com/harpertoken/harper" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
+              <a href="https://github.com/bniladridas/diff" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
                 GitHub <ExternalLink className="w-3 h-3" />
               </a>
             </div>

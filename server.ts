@@ -7,8 +7,8 @@ async function startServer() {
   const PORT = 3000;
 
   // GitHub API integration
-  const REPO_OWNER = "harpertoken";
-  const REPO_NAME = "harper";
+  const REPO_OWNER = process.env.GITHUB_REPO_OWNER || "bniladridas";
+  const REPO_NAME = process.env.GITHUB_REPO_NAME || "diff";
 
   const getHeaders = (accept: string) => {
     const headers: any = { Accept: accept };

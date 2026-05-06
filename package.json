@@ -15,8 +15,8 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "src/**/*.{ts,tsx}": [
-      "npm run lint"
+    "*.{js,jsx,ts,tsx}": [
+      "pre-commit run --file"
     ]
   },
   "dependencies": {
