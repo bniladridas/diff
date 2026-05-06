@@ -808,7 +808,7 @@ export default function App() {
       >
         {/* Pull Requests List */}
         <aside
-          style={{ 
+          style={{
             width: isSidebarHidden ? 0 : undefined,
             transition: isResizing ? 'none' : undefined
           }}
