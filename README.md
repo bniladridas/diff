@@ -6,7 +6,7 @@ The system architecture leverages a React frontend styled with Tailwind CSS to m
 
 The project incorporates a robust continuous integration pipeline and pre-commit hooks to maintain strict type safety and formatting standards. Every design decision serves the primary goal of providing a high-performance environment for developers who require a focused view of the evolving codebase.
 
-## Screenshots
+## Screenshot
 
 <div align="center">
   <img src="src/assets/screenshot.png" alt="DIFF Code Review" style="border-radius: 12px; max-width: 100%; height: auto; border: 1px solid rgba(255,255,255,0.1);" />
