@@ -25,4 +25,9 @@ jobs:
       - name: YAML lint
         uses: ibiqlik/action-yamllint@v3
         with:
-          file_or_dir: .
+          file_or_dir: |
+            .github/workflows/
+            .pre-commit-config.yaml
+
+      - name: Pre-commit check
+        uses: pre-commit/action@v3.0.1
