@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,900;1,400;1,900&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,900;1,400;1,900&display=swap");
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
@@ -7,7 +7,7 @@
   --font-serif: "Playfair Display", ui-serif, Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-brand-orange: #FF4D00;
+  --color-brand-orange: #ff4d00;
   --color-onyx: #050505;
 }
 

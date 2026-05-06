@@ -86,6 +86,56 @@ async function startServer() {
     }
   });
 
+  app.get("/api/branches", async (req, res) => {
+    try {
+      const response = await axios.get(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches`,
+        { headers: getHeaders("application/vnd.github.v3+json") }
+      );
+      res.json(response.data);
+    } catch (error: any) {
+      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+    }
+  });
+
+  app.get("/api/compare/:base/:head/diff", async (req, res) => {
+    try {
+      const { base, head } = req.params;
+      const response = await axios.get(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${base}...${head}`,
+        { headers: getHeaders("application/vnd.github.v3.diff") }
+      );
+      res.send(response.data);
+    } catch (error: any) {
+      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+    }
+  });
+
+  app.get("/api/compare/:base/:head/files", async (req, res) => {
+    try {
+      const { base, head } = req.params;
+      const response = await axios.get(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${base}...${head}`,
+        { headers: getHeaders("application/vnd.github.v3+json") }
+      );
+      res.json(response.data.files);
+    } catch (error: any) {
+      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+    }
+  });
+
+  app.get("/api/repo", async (req, res) => {
+    try {
+      const response = await axios.get(
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`,
+        { headers: getHeaders("application/vnd.github.v3+json") }
+      );
+      res.json(response.data);
+    } catch (error: any) {
+      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
