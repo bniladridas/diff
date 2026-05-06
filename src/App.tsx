@@ -851,7 +851,6 @@ export default function App() {
                       </span>
                       <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
-
                     <div className="flex items-center gap-2 ml-2">
                       {(currentOwner !== defaultRepo.owner ||
                         currentRepo !== defaultRepo.repo) && (
@@ -862,19 +861,19 @@ export default function App() {
                               setDefaultRepo(newDefault);
                               localStorage.setItem("diff_default_repo", JSON.stringify(newDefault));
                             }}
-                            className="text-[8px] uppercase tracking-widest text-brand-orange/40 hover:text-brand-orange transition-colors shrink-0"
+                            className="text-[8px] uppercase tracking-[0.2em] opacity-20 hover:opacity-100 transition-opacity shrink-0"
                             title="Set as your default repository"
                           >
-                            [Set Default]
+                            Set Default
                           </button>
                           <button
                             onClick={() => {
                               switchRepo(defaultRepo.owner, defaultRepo.repo);
                             }}
-                            className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white/40 transition-colors shrink-0"
+                            className="text-[8px] uppercase tracking-[0.2em] opacity-20 hover:opacity-100 transition-opacity shrink-0"
                             title={`Reset to default (${defaultRepo.owner}/${defaultRepo.repo})`}
                           >
-                            [Reset]
+                            Reset
                           </button>
                         </>
                       )}
@@ -887,10 +886,10 @@ export default function App() {
                            localStorage.removeItem("diff_default_repo");
                            switchRepo(SYSTEM_OWNER, SYSTEM_REPO);
                          }}
-                         className="text-[8px] uppercase tracking-widest text-rose-500/30 hover:text-rose-500/60 transition-colors shrink-0"
+                         className="text-[8px] uppercase tracking-[0.2em] text-rose-500 opacity-20 hover:opacity-100 transition-opacity shrink-0"
                          title="Clear custom default and reset to system default"
                        >
-                         [Clear]
+                         Clear
                        </button>
                       )}
                     </div>
@@ -938,11 +937,14 @@ export default function App() {
 
             <div className="p-6 lg:p-8 border-b border-white/5 space-y-6 shrink-0">
               <div className="flex items-center justify-between">
-                <h2 className="text-[10px] uppercase tracking-[0.4em] opacity-40 font-bold">
-                  {viewMode === "pulls" ? "Pulls" : "Branches"}
-                </h2>
+                <div className="flex items-center gap-2 text-white/20">
+                  <Activity className="w-3 h-3" />
+                  <h2 className="text-[9px] font-bold uppercase tracking-[0.4em]">
+                    {viewMode === "pulls" ? "Stream" : "Network"}
+                  </h2>
+                </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-[10px] font-mono text-brand-orange px-2 py-0.5 bg-brand-orange/10 border border-brand-orange/20">
+                  <span className="text-[9px] font-mono text-brand-orange opacity-40">
                     {viewMode === "pulls" ? pulls.length : branches.length}
                   </span>
                   <button
@@ -1016,24 +1018,24 @@ export default function App() {
                             />
                           )}
 
-                          <div className="space-y-3 lg:space-y-4">
-                            <div className="flex items-center justify-between text-[10px] font-mono opacity-40">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between text-[9px] font-mono opacity-30">
                               <span className="flex items-center gap-2">
                                 #{pull.number}
                                 {pull.draft && (
-                                  <span className="text-[8px] font-mono px-1 border border-white/10 bg-white/5 opacity-40 uppercase tracking-widest leading-tight">
+                                  <span className="text-[7px] font-mono px-1 border border-white/5 opacity-50 uppercase tracking-widest leading-tight">
                                     Draft
                                   </span>
                                 )}
                               </span>
                               <span className="hidden sm:block">
-                                {new Date(pull.created_at).toLocaleDateString()}
+                                {new Date(pull.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                               </span>
                             </div>
 
                             <h3
                               className={cn(
-                                "font-serif italic text-lg lg:text-xl leading-tight transition-colors break-words",
+                                "font-serif italic text-lg leading-tight transition-colors break-words",
                                 selectedPull?.id === pull.id
                                   ? "text-white"
                                   : "text-white/60 group-hover:text-white",
@@ -1042,13 +1044,13 @@ export default function App() {
                               {pull.title}
                             </h3>
 
-                            <div className="flex items-center gap-3 pt-1 lg:pt-2">
+                            <div className="flex items-center gap-2 pt-1">
                               <img
                                 src={pull.user.avatar_url}
                                 alt=""
-                                className="w-5 h-5 grayscale opacity-50 group-hover:opacity-100 transition-opacity border border-white/10"
+                                className="w-4 h-4 grayscale opacity-30 group-hover:opacity-100 transition-opacity"
                               />
-                              <span className="text-[9px] lg:text-[10px] tracking-widest opacity-40 group-hover:opacity-80 transition-opacity font-bold">
+                              <span className="text-[9px] tracking-widest opacity-20 group-hover:opacity-60 transition-opacity font-bold uppercase">
                                 {pull.user.login}
                               </span>
                             </div>
@@ -1173,31 +1175,31 @@ export default function App() {
                 {/* PR/Branch Meta Header */}
                 <div className="flex flex-col xl:flex-row justify-between items-start gap-8 lg:gap-12 pb-8 lg:pb-12 border-b border-white/5">
                   <div className="space-y-4 lg:space-y-6 flex-1">
-                    <div className="flex items-center gap-3">
-                      <span className="w-2 h-2 bg-brand-orange animate-pulse" />
-                      <span className="text-[10px] uppercase tracking-[0.3em] font-bold opacity-40">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 bg-brand-orange" />
+                      <span className="text-[9px] uppercase tracking-[0.4em] font-medium opacity-30">
                         {selectedPull ? "Pull Request" : "Branch View"}
                       </span>
                     </div>
-                    <h2 className="text-3xl sm:text-4xl lg:text-6xl font-serif italic tracking-tighter leading-[1] lg:leading-[0.9] break-words">
+                    <h2 className="text-3xl sm:text-4xl lg:text-7xl font-serif italic tracking-tighter leading-[0.95] lg:leading-[0.85] break-words">
                       {selectedPull ? selectedPull.title : selectedBranch!.name}
                     </h2>
-                      <div className="flex flex-wrap gap-6 lg:gap-8 items-center pt-4">
+                      <div className="flex flex-wrap gap-8 items-center pt-2">
                         {selectedPull && (
-                          <div className="flex flex-col gap-1">
-                            <p className="text-sm font-mono text-brand-orange flex items-center gap-2">
+                          <div className="flex items-center gap-4">
+                            <span className="text-xs font-mono text-brand-orange/80">
                               #{selectedPull.number}
-                              {selectedPull.draft && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.5 border border-white/10 bg-white/5 opacity-40 uppercase tracking-widest">
-                                  Draft
-                                </span>
-                              )}
-                            </p>
+                            </span>
+                            {selectedPull.draft && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 border border-white/5 opacity-40 uppercase tracking-widest">
+                                Draft
+                              </span>
+                            )}
                             {selectedPull.base && selectedPull.head && (
-                              <div className="flex items-center gap-2 text-[10px] font-mono opacity-40">
-                                <span className="px-1 border border-white/10">{selectedPull.base.ref}</span>
-                                <ChevronRight className="w-3 h-3" />
-                                <span className="px-1 border border-white/10 text-brand-orange/60">{selectedPull.head.ref}</span>
+                              <div className="flex items-center gap-2 text-[9px] font-mono opacity-30">
+                                <span className="opacity-60">{selectedPull.base.ref}</span>
+                                <ChevronRight className="w-2.5 h-2.5 opacity-40" />
+                                <span className="text-brand-orange/60">{selectedPull.head.ref}</span>
                               </div>
                             )}
                           </div>
@@ -1274,9 +1276,9 @@ export default function App() {
                     }
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full xl:w-auto px-6 lg:px-10 py-4 lg:py-5 border border-white/10 text-[10px] font-bold uppercase tracking-[0.4em] hover:bg-brand-orange hover:border-brand-orange transition-all flex items-center justify-center gap-3"
+                    className="w-full xl:w-auto px-6 py-3 border border-white/10 text-[9px] font-bold uppercase tracking-[0.4em] hover:bg-white/5 transition-all flex items-center justify-center gap-3 opacity-40 hover:opacity-100"
                   >
-                    Source <ExternalLink className="w-4 h-4" />
+                    Open Source <ExternalLink className="w-3.5 h-3.5 opacity-40" />
                   </a>
                 </div>
 
@@ -1286,29 +1288,41 @@ export default function App() {
                     <button
                       onClick={() => setActiveTab("diff")}
                       className={cn(
-                        "px-8 py-4 text-[10px] uppercase tracking-[0.4em] font-bold transition-all border-b-2",
+                        "px-8 py-5 text-[9px] uppercase tracking-[0.5em] font-medium transition-all relative overflow-hidden group",
                         activeTab === "diff"
-                          ? "border-brand-orange text-white"
-                          : "border-transparent text-white/30 hover:text-white/60",
+                          ? "text-brand-orange"
+                          : "text-white/20 hover:text-white/40",
                       )}
                     >
                       File Diff
+                      {activeTab === "diff" && (
+                        <motion.div
+                          layoutId="activeTab"
+                          className="absolute bottom-0 left-0 right-0 h-[1px] bg-brand-orange"
+                        />
+                      )}
                     </button>
                     {selectedPull && (
                       <button
                         onClick={() => setActiveTab("discussion")}
                         className={cn(
-                          "px-8 py-4 text-[10px] uppercase tracking-[0.4em] font-bold transition-all border-b-2 flex items-center gap-3",
+                          "px-8 py-5 text-[9px] uppercase tracking-[0.5em] font-medium transition-all relative overflow-hidden group flex items-center gap-3",
                           activeTab === "discussion"
-                            ? "border-brand-orange text-white"
-                            : "border-transparent text-white/30 hover:text-white/60",
+                            ? "text-brand-orange"
+                            : "text-white/20 hover:text-white/40",
                         )}
                       >
                         Discussion
                         {comments.length + reviewComments.length > 0 && (
-                          <span className="bg-brand-orange text-white text-[8px] px-1.5 py-0.5 rounded-full">
-                            {comments.length + reviewComments.length}
+                          <span className="text-brand-orange/60 text-[8px] font-mono opacity-80">
+                            ({comments.length + reviewComments.length})
                           </span>
+                        )}
+                        {activeTab === "discussion" && (
+                          <motion.div
+                            layoutId="activeTab"
+                            className="absolute bottom-0 left-0 right-0 h-[1px] bg-brand-orange"
+                          />
                         )}
                       </button>
                     )}
@@ -1320,12 +1334,17 @@ export default function App() {
                   {activeTab === "diff" ? (
                     <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       {/* File List */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-4 mb-6">
-                          <Activity className="w-5 h-5 text-brand-orange" />
-                          <h3 className="text-sm font-bold uppercase tracking-[0.3em]">
-                            Manifest
-                          </h3>
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                          <div className="flex items-center gap-2 text-white/20">
+                            <Hash className="w-3 h-3" />
+                            <h3 className="text-[9px] font-bold uppercase tracking-[0.4em]">
+                              Manifest
+                            </h3>
+                          </div>
+                          <span className="text-[8px] font-mono opacity-20 uppercase tracking-widest">
+                            {files.length} Entries
+                          </span>
                         </div>
                         <div className="flex flex-col border border-white/5 bg-black/40 max-h-[300px] lg:max-h-[600px] overflow-y-auto custom-scrollbar">
                           {files.length > 0 ? (
@@ -1393,11 +1412,11 @@ export default function App() {
                             "fixed inset-0 z-[100] bg-onyx p-8 sm:p-12 lg:p-16 overflow-y-auto custom-scrollbar",
                         )}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                            <FileCode className="w-5 h-5 text-brand-orange" />
-                            <h3 className="text-sm font-bold uppercase tracking-[0.3em]">
-                              Git Diff Stream
+                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                          <div className="flex items-center gap-2 text-white/20">
+                            <Code className="w-3 h-3" />
+                            <h3 className="text-[9px] font-bold uppercase tracking-[0.4em]">
+                              Source Buffer
                             </h3>
                           </div>
                           <div className="flex items-center gap-6">
@@ -1406,7 +1425,7 @@ export default function App() {
                             </div>
                             <button
                               onClick={() => setIsFullscreen(!isFullscreen)}
-                              className="p-2 border border-white/5 hover:border-brand-orange transition-all group"
+                              className="text-[9px] uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity flex items-center gap-2 group"
                               title={
                                 isFullscreen
                                   ? "Exit Fullscreen"
@@ -1414,27 +1433,25 @@ export default function App() {
                               }
                             >
                               {isFullscreen ? (
-                                <Minimize2 className="w-4 h-4 text-white/40 group-hover:text-brand-orange transition-colors" />
+                                <>
+                                  Minimize <Minimize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                </>
                               ) : (
-                                <Maximize2 className="w-4 h-4 text-white/40 group-hover:text-brand-orange transition-colors" />
+                                <>
+                                  Maximize <Maximize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                </>
                               )}
                             </button>
                           </div>
                         </div>
 
-                        <div
-                          className={cn(
-                            "relative group",
-                            isFullscreen && "max-w-7xl mx-auto",
-                          )}
-                        >
-                          <div className="absolute -inset-0.5 bg-gradient-to-br from-brand-orange/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity blur shadow-xl" />
-                          <div className="relative bg-[#0A0A0A] border border-white/5 overflow-hidden">
+                        <div className={cn("relative", isFullscreen && "max-w-7xl mx-auto")}>
+                          <div className="relative bg-[#080808] border border-white/5 overflow-hidden">
                             {loadingFiles ? (
-                              <div className="p-20 lg:p-32 flex flex-col items-center justify-center space-y-6 text-center bg-black/40">
-                                <div className="w-12 h-12 border border-brand-orange/20 border-t-brand-orange animate-spin" />
-                                <p className="text-[10px] uppercase tracking-[0.5em] text-brand-orange/50 animate-pulse font-bold">
-                                  Decoding Diff Buffer...
+                              <div className="p-20 lg:p-32 flex flex-col items-center justify-center space-y-6 text-center">
+                                <div className="w-1.5 h-1.5 bg-brand-orange animate-pulse" />
+                                <p className="text-[9px] uppercase tracking-[0.5em] text-brand-orange/40 font-medium">
+                                  Decoding Diff Stream...
                                 </p>
                               </div>
                             ) : (
@@ -1447,30 +1464,30 @@ export default function App() {
                                 )}
                               >
                                 {selectedFile?.patch ? (
-                                  <div className="w-fit min-w-full bg-black/40 font-mono text-[10px] sm:text-xs lg:text-sm leading-relaxed">
+                                  <div className="w-fit min-w-full bg-black/20 font-mono text-[10px] sm:text-xs leading-relaxed">
                                     {diffRows.map((row, index) => (
                                       <div
                                         key={`${index}-${row.content}`}
                                         className={cn(
-                                          "grid min-w-full grid-cols-[4rem_4rem_1fr]",
+                                          "grid min-w-full grid-cols-[3.5rem_3.5rem_1fr]",
                                           row.kind === "added" &&
-                                            "bg-emerald-500/10 text-emerald-300",
+                                            "bg-emerald-500/[0.04] text-emerald-300/90",
                                           row.kind === "deleted" &&
-                                            "bg-rose-500/10 text-rose-300",
+                                            "bg-rose-500/[0.04] text-rose-300/90",
                                           row.kind === "hunk" &&
-                                            "bg-brand-orange/10 text-brand-orange/80",
+                                            "bg-brand-orange/[0.05] text-brand-orange/60",
                                           row.kind === "meta" &&
-                                            "text-white/35",
-                                          row.kind === "context" && "text-white/80",
+                                            "text-white/20",
+                                          row.kind === "context" && "text-white/60",
                                         )}
                                       >
-                                        <div className="border-r border-white/5 px-3 py-1 text-right text-white/25 select-none">
+                                        <div className="px-3 py-0.5 text-right text-white/10 select-none border-r border-white/5">
                                           {row.oldLine ?? ""}
                                         </div>
-                                        <div className="border-r border-white/5 px-3 py-1 text-right text-white/25 select-none">
+                                        <div className="px-3 py-0.5 text-right text-white/10 select-none border-r border-white/5">
                                           {row.newLine ?? ""}
                                         </div>
-                                        <pre className="px-4 py-1 whitespace-pre overflow-x-visible">
+                                        <pre className="px-4 py-0.5 whitespace-pre overflow-x-visible">
                                           {row.content || " "}
                                         </pre>
                                       </div>
@@ -1602,20 +1619,20 @@ export default function App() {
                                 <img
                                   src={comment.user.avatar_url}
                                   alt=""
-                                  className="w-10 h-10 border border-white/10 shrink-0"
+                                  className="w-10 h-10 grayscale opacity-40 shrink-0"
                                 />
-                                <div className="space-y-4 flex-1">
+                                <div className="space-y-6 flex-1 min-w-0">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                                    <span className="text-[10px] tracking-widest font-bold text-brand-orange">
+                                    <span className="text-[10px] tracking-[0.4em] font-bold uppercase opacity-60">
                                       {comment.user.login}
                                     </span>
-                                    <span className="text-[10px] opacity-30 font-mono italic">
+                                    <span className="text-[9px] opacity-20 font-mono">
                                       {new Date(
                                         comment.created_at,
-                                      ).toLocaleString()}
+                                      ).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                   </div>
-                                  <div className="prose prose-invert prose-sm max-w-none opacity-80 leading-relaxed">
+                                  <div className="prose prose-invert prose-sm max-w-none opacity-80 leading-relaxed font-sans">
                                     <ReactMarkdown
                                       remarkPlugins={[remarkGfm]}
                                       rehypePlugins={[rehypeRaw, rehypeSanitize]}
