@@ -5,10 +5,10 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  ChevronRight, 
-  ExternalLink, 
-  FileCode, 
+import {
+  ChevronRight,
+  ExternalLink,
+  FileCode,
   Activity,
   RefreshCw,
   Code,
@@ -131,7 +131,7 @@ export default function App() {
   const fetchPulls = async (pageNum = 1, reset = false) => {
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
-    
+
     try {
       const response = await fetch(`/api/pulls?state=${stateFilter}&page=${pageNum}&per_page=30`);
       if (!response.ok) {
@@ -143,11 +143,11 @@ export default function App() {
         throw new Error(message);
       }
       const data: PullRequest[] = await response.json();
-      
+
       const newPulls = reset ? data : [...pulls, ...data];
       setPulls(newPulls);
       setHasMore(data.length === 30);
-      
+
       if (reset) {
         if (data.length > 0) {
           handleSelectPull(data[0]);
@@ -205,7 +205,7 @@ export default function App() {
         fetch(`/api/pulls/${pull.number}/comments`),
         fetch(`/api/pulls/${pull.number}/review-comments`)
       ]);
-      
+
       if (commentsRes.ok) setComments(await commentsRes.json());
       if (reviewCommentsRes.ok) setReviewComments(await reviewCommentsRes.json());
     } catch (err) {
@@ -218,7 +218,7 @@ export default function App() {
   if (!isVerified) {
     return (
       <div className="fixed inset-0 bg-onyx z-[100] flex items-center justify-center p-6 font-mono">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="w-full max-w-[240px] space-y-4 text-center"
@@ -226,11 +226,11 @@ export default function App() {
           <div className="text-[10px] uppercase tracking-[0.4em] opacity-20 font-bold mb-8">
             Access Verification
           </div>
-          
+
           <div className="text-xl tracking-tighter text-white/40 mb-4">
             {captchaChallenge.a} + {captchaChallenge.b}
           </div>
-          
+
           <input
             type="text"
             value={captchaInput}
@@ -265,7 +265,7 @@ export default function App() {
       <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-onyx/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 lg:px-12 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button 
+            <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="lg:hidden p-2 -ml-2 text-white/40 hover:text-brand-orange transition-colors"
             >
@@ -281,7 +281,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-6">
             <div className="hidden lg:flex items-center gap-12 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40">
               <a href="https://github.com/harpertoken/harper" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
@@ -289,7 +289,7 @@ export default function App() {
               </a>
             </div>
 
-            <button 
+            <button
               onClick={() => setIsSidebarHidden(!isSidebarHidden)}
               className="hidden lg:flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40 hover:text-brand-orange transition-colors"
             >
@@ -297,7 +297,7 @@ export default function App() {
             </button>
           </div>
 
-          <button 
+          <button
             onClick={() => fetchPulls(1, true)}
             className="p-3 border border-white/10 hover:border-brand-orange transition-all group shrink-0"
           >
@@ -306,12 +306,12 @@ export default function App() {
         </div>
       </header>
 
-      <main 
+      <main
         className="pt-20 h-screen flex overflow-hidden bg-onyx"
         style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
       >
         {/* Pull Requests List */}
-        <aside 
+        <aside
           style={{ width: isSidebarHidden ? 0 : undefined }}
           className={cn(
             "border-r border-white/5 bg-black/20 flex flex-col transition-all duration-300 ease-in-out z-40 relative group overflow-hidden",
@@ -341,8 +341,8 @@ export default function App() {
                     onClick={() => setStateFilter(s)}
                     className={cn(
                       "flex-1 py-2 text-[8px] lg:text-[10px] uppercase tracking-widest font-bold transition-all",
-                      stateFilter === s 
-                        ? "bg-brand-orange text-white" 
+                      stateFilter === s
+                        ? "bg-brand-orange text-white"
                         : "text-white/30 hover:text-white/60"
                     )}
                   >
@@ -361,8 +361,8 @@ export default function App() {
           ) : error ? (
             <div className="p-12 text-center space-y-4">
               <p className="text-xs text-rose-500 font-mono">{error}</p>
-              <button 
-                onClick={() => fetchPulls(1, true)} 
+              <button
+                onClick={() => fetchPulls(1, true)}
                 className="text-[10px] uppercase tracking-widest text-brand-orange border-b border-brand-orange/20"
               >
                 Try Again
@@ -383,12 +383,12 @@ export default function App() {
                   )}
                 >
                   {selectedPull?.id === pull.id && (
-                    <motion.div 
+                    <motion.div
                       layoutId="active-indicator"
-                      className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange" 
+                      className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange"
                     />
                   )}
-                  
+
                   <div className="space-y-3 lg:space-y-4">
                     <div className="flex items-center justify-between text-[10px] font-mono opacity-40">
                       <span className="flex items-center gap-2">
@@ -445,7 +445,7 @@ export default function App() {
 
         {/* Resize Handle */}
         {!isSidebarHidden && (
-          <div 
+          <div
             onMouseDown={() => setIsResizing(true)}
             className="hidden lg:block w-px h-full bg-white/5 hover:bg-brand-orange cursor-col-resize transition-colors z-50 group px-1 flex-shrink-0"
           >
@@ -484,9 +484,9 @@ export default function App() {
                     </div>
                   </div>
 
-                  <a 
-                    href={selectedPull.html_url} 
-                    target="_blank" 
+                  <a
+                    href={selectedPull.html_url}
+                    target="_blank"
                     rel="noreferrer"
                     className="w-full xl:w-auto px-6 lg:px-10 py-4 lg:py-5 border border-white/10 text-[10px] font-bold uppercase tracking-[0.4em] hover:bg-brand-orange hover:border-brand-orange transition-all flex items-center justify-center gap-3"
                   >
@@ -497,7 +497,7 @@ export default function App() {
                 {/* Tabs */}
                 <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-12 px-4 sm:px-6 lg:px-12 bg-onyx/95 backdrop-blur-md border-b border-white/5">
                   <div className="flex">
-                    <button 
+                    <button
                       onClick={() => setActiveTab('diff')}
                       className={cn(
                         "px-8 py-4 text-[10px] uppercase tracking-[0.4em] font-bold transition-all border-b-2",
@@ -506,7 +506,7 @@ export default function App() {
                     >
                       File Diff
                     </button>
-                    <button 
+                    <button
                       onClick={() => setActiveTab('discussion')}
                       className={cn(
                         "px-8 py-4 text-[10px] uppercase tracking-[0.4em] font-bold transition-all border-b-2 flex items-center gap-3",
@@ -585,7 +585,7 @@ export default function App() {
                             <div className="text-[9px] font-mono opacity-20 uppercase tracking-widest leading-none hidden sm:block">
                               {selectedFile?.filename || 'No file selected'}
                             </div>
-                            <button 
+                            <button
                               onClick={() => setIsFullscreen(!isFullscreen)}
                               className="p-2 border border-white/5 hover:border-brand-orange transition-all group"
                               title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
