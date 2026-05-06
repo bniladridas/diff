@@ -27,9 +27,6 @@ import {
   Minimize2,
 } from "lucide-react";
 import { cn } from "./lib/utils";
-import Prism from "prismjs";
-import "prismjs/components/prism-diff";
-import "prismjs/themes/prism-tomorrow.css";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -91,6 +88,13 @@ interface RepoInfo {
   html_url: string;
 }
 
+interface DiffRow {
+  kind: "meta" | "hunk" | "context" | "added" | "deleted";
+  content: string;
+  oldLine: number | null;
+  newLine: number | null;
+}
+
 const DEFAULT_OWNER = "bniladridas";
 const DEFAULT_REPO = "diff";
 const ALERT_TYPES = {
@@ -146,6 +150,87 @@ const getTextContent = (node: ReactNode): string => {
 
 const normalizeAlertMarkdown = (node: ReactNode) =>
   getTextContent(node).replace(ALERT_MARKER_PATTERN, "").trim();
+
+const parseDiffRows = (patch?: string): DiffRow[] => {
+  if (!patch) return [];
+
+  const rows: DiffRow[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+
+  for (const line of patch.split("\n")) {
+    const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunkMatch) {
+      oldLine = Number(hunkMatch[1]);
+      newLine = Number(hunkMatch[2]);
+      rows.push({
+        kind: "hunk",
+        content: line,
+        oldLine: null,
+        newLine: null,
+      });
+      continue;
+    }
+
+    if (
+      line.startsWith("diff --git") ||
+      line.startsWith("index ") ||
+      line.startsWith("--- ") ||
+      line.startsWith("+++ ")
+    ) {
+      rows.push({
+        kind: "meta",
+        content: line,
+        oldLine: null,
+        newLine: null,
+      });
+      continue;
+    }
+
+    if (line.startsWith("+")) {
+      rows.push({
+        kind: "added",
+        content: line,
+        oldLine: null,
+        newLine,
+      });
+      newLine += 1;
+      continue;
+    }
+
+    if (line.startsWith("-")) {
+      rows.push({
+        kind: "deleted",
+        content: line,
+        oldLine,
+        newLine: null,
+      });
+      oldLine += 1;
+      continue;
+    }
+
+    if (line.startsWith("\\")) {
+      rows.push({
+        kind: "meta",
+        content: line,
+        oldLine: null,
+        newLine: null,
+      });
+      continue;
+    }
+
+    rows.push({
+      kind: "context",
+      content: line,
+      oldLine,
+      newLine,
+    });
+    oldLine += 1;
+    newLine += 1;
+  }
+
+  return rows;
+};
 
 const markdownComponents = {
   blockquote({ children }: { children?: ReactNode }) {
@@ -220,6 +305,7 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
+  const diffRows = parseDiffRows(selectedFile?.patch);
 
   useEffect(() => {
     repoKeyRef.current = `${currentOwner}/${currentRepo}`;
@@ -396,37 +482,6 @@ export default function App() {
       }
     }
   };
-
-  useEffect(() => {
-    if (
-      !loading &&
-      !loadingFiles &&
-      selectedFile?.patch &&
-      activeTab === "diff" &&
-      isVerified
-    ) {
-      const timer = setTimeout(() => {
-        Prism.highlightAll();
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  }, [
-    selectedFile,
-    activeTab,
-    loadingFiles,
-    loading,
-    isVerified,
-    isFullscreen,
-    selectedBranch,
-    selectedPull,
-  ]);
-
-  // Update Prism highlight when selected file patch changes for branches too
-  useEffect(() => {
-    if (selectedFile?.patch) {
-      Prism.highlightAll();
-    }
-  }, [selectedFile?.patch]);
 
   const fetchPulls = async (pageNum = 1, reset = false) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
@@ -1214,16 +1269,45 @@ export default function App() {
                                     : "max-h-[600px] lg:max-h-[800px]",
                                 )}
                               >
-                                <pre className="w-fit min-w-full p-4 sm:p-6 lg:p-8 text-[10px] sm:text-xs lg:text-sm font-mono leading-relaxed !bg-black/40 !m-0 overflow-x-visible">
-                                  <code className="language-diff block min-w-full">
-                                    {selectedFile?.patch ||
-                                      (selectedFile
-                                        ? "Binary file or no changes shown."
-                                        : files.length > 0
-                                          ? "Select a file from the manifest to view its diff."
-                                          : "No code changes detected in this context.")}
-                                  </code>
-                                </pre>
+                                {selectedFile?.patch ? (
+                                  <div className="w-fit min-w-full bg-black/40 font-mono text-[10px] sm:text-xs lg:text-sm leading-relaxed">
+                                    {diffRows.map((row, index) => (
+                                      <div
+                                        key={`${index}-${row.content}`}
+                                        className={cn(
+                                          "grid min-w-full grid-cols-[4rem_4rem_1fr]",
+                                          row.kind === "added" &&
+                                            "bg-emerald-500/10 text-emerald-300",
+                                          row.kind === "deleted" &&
+                                            "bg-rose-500/10 text-rose-300",
+                                          row.kind === "hunk" &&
+                                            "bg-brand-orange/10 text-brand-orange/80",
+                                          row.kind === "meta" &&
+                                            "text-white/35",
+                                          row.kind === "context" && "text-white/80",
+                                        )}
+                                      >
+                                        <div className="border-r border-white/5 px-3 py-1 text-right text-white/25 select-none">
+                                          {row.oldLine ?? ""}
+                                        </div>
+                                        <div className="border-r border-white/5 px-3 py-1 text-right text-white/25 select-none">
+                                          {row.newLine ?? ""}
+                                        </div>
+                                        <pre className="px-4 py-1 whitespace-pre-wrap break-words">
+                                          {row.content || " "}
+                                        </pre>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <pre className="w-fit min-w-full p-4 sm:p-6 lg:p-8 text-[10px] sm:text-xs lg:text-sm font-mono leading-relaxed !bg-black/40 !m-0 overflow-x-visible text-white/60">
+                                    {selectedFile
+                                      ? "Binary file or no changes shown."
+                                      : files.length > 0
+                                        ? "Select a file from the manifest to view its diff."
+                                        : "No code changes detected in this context."}
+                                  </pre>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1385,23 +1469,6 @@ export default function App() {
       <style
         dangerouslySetInnerHTML={{
           __html: `
-        .language-diff .token.inserted {
-          background: rgba(34, 197, 94, 0.15);
-          color: #4ade80;
-          display: block;
-          width: 100%;
-        }
-        .language-diff .token.deleted {
-          background: rgba(239, 68, 68, 0.15);
-          color: #f87171;
-          display: block;
-          width: 100%;
-        }
-        .language-diff .token.coord {
-          color: #FF4D00;
-          opacity: 0.6;
-        }
-
         .bg-grid-white\/\\[0\\.5\\] {
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.1)'%3E%3Cpath d='M0 .5H31.5V32'/%3E%3C/svg%3E");
         }
