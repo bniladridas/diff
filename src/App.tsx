@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   GitBranch,
@@ -76,6 +76,9 @@ interface RepoInfo {
   html_url: string;
 }
 
+const DEFAULT_OWNER = "bniladridas";
+const DEFAULT_REPO = "diff";
+
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
   const [currentOwner, setCurrentOwner] = useState("harpertoken");
@@ -114,6 +117,43 @@ export default function App() {
   });
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
+
+  useEffect(() => {
+    repoKeyRef.current = `${currentOwner}/${currentRepo}`;
+  }, [currentOwner, currentRepo]);
+
+  const resetRepoState = () => {
+    setRepoInfo(null);
+    setBranches([]);
+    setSelectedBranch(null);
+    setPulls([]);
+    setSelectedPull(null);
+    setFiles([]);
+    setSelectedFile(null);
+    setComments([]);
+    setReviewComments([]);
+    setActiveTab("diff");
+    setPage(1);
+    setHasMore(true);
+    setLoading(true);
+    setLoadingFiles(false);
+    setLoadingComments(false);
+    setLoadingMore(false);
+  };
+
+  const switchRepo = (owner: string, repo: string) => {
+    const nextOwner = owner.trim();
+    const nextRepo = repo.trim();
+    if (!nextOwner || !nextRepo) return;
+    if (nextOwner === currentOwner && nextRepo === currentRepo) return;
+
+    repoKeyRef.current = `${nextOwner}/${nextRepo}`;
+    resetRepoState();
+    setCurrentOwner(nextOwner);
+    setCurrentRepo(nextRepo);
+    setError(null);
+  };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -153,12 +193,16 @@ export default function App() {
   }, [viewMode, stateFilter, currentOwner, currentRepo]);
 
   const fetchRepoInfo = async () => {
+    const requestKey = `${currentOwner}/${currentRepo}`;
     try {
       const res = await fetch(
         `/api/repo?owner=${currentOwner}&repo=${currentRepo}`,
       );
       if (res.ok) {
-        setRepoInfo(await res.json());
+        const data: RepoInfo = await res.json();
+        if (repoKeyRef.current !== requestKey) return null;
+        setRepoInfo(data);
+        return data;
       } else {
         const errorData = await res.json().catch(() => ({}));
         console.error("Repo info fetch error:", errorData.error || res.statusText);
@@ -166,37 +210,50 @@ export default function App() {
     } catch (err) {
       console.error("Repo info fetch error:", err);
     }
+    return null;
   };
 
   const fetchBranches = async () => {
+    const requestKey = `${currentOwner}/${currentRepo}`;
     setLoading(true);
     setError(null);
     try {
+      const comparisonRepoInfo = repoInfo ?? (await fetchRepoInfo());
+      if (repoKeyRef.current !== requestKey) return;
+
       const response = await fetch(
         `/api/branches?owner=${currentOwner}&repo=${currentRepo}`,
       );
+      if (repoKeyRef.current !== requestKey) return;
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || "Failed to fetch branches");
       }
       const data: Branch[] = await response.json();
+      if (repoKeyRef.current !== requestKey) return;
       setBranches(data);
       if (data.length > 0) {
-        handleSelectBranch(data[0]);
+        handleSelectBranch(data[0], comparisonRepoInfo);
       } else {
         setSelectedBranch(null);
         setFiles([]);
         setSelectedFile(null);
       }
     } catch (err: any) {
+      if (repoKeyRef.current !== requestKey) return;
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (repoKeyRef.current === requestKey) {
+        setLoading(false);
+      }
     }
   };
 
-  const handleSelectBranch = async (branch: Branch) => {
-    if (!repoInfo) return;
+  const handleSelectBranch = async (
+    branch: Branch,
+    comparisonRepoInfo = repoInfo,
+  ) => {
+    const requestKey = `${currentOwner}/${currentRepo}`;
     setSelectedBranch(branch);
     setSelectedPull(null);
     setLoadingFiles(true);
@@ -207,10 +264,10 @@ export default function App() {
     setActiveTab("diff");
 
     try {
-      const base = repoInfo.default_branch;
+      const base = comparisonRepoInfo?.default_branch;
       const head = branch.name;
 
-      if (base === head) {
+      if (!base || base === head) {
         setFiles([]);
         setLoadingFiles(false);
         return;
@@ -219,17 +276,22 @@ export default function App() {
       const filesRes = await fetch(
         `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/files?owner=${currentOwner}&repo=${currentRepo}`,
       );
+      if (repoKeyRef.current !== requestKey) return;
       if (filesRes.ok) {
         const data = await filesRes.json();
+        if (repoKeyRef.current !== requestKey) return;
         setFiles(data);
         if (data.length > 0) {
           setSelectedFile(data[0]);
         }
       }
     } catch (err) {
+      if (repoKeyRef.current !== requestKey) return;
       console.error("Branch comparison files fetch error:", err);
     } finally {
-      setLoadingFiles(false);
+      if (repoKeyRef.current === requestKey) {
+        setLoadingFiles(false);
+      }
     }
   };
 
@@ -265,6 +327,7 @@ export default function App() {
   }, [selectedFile?.patch]);
 
   const fetchPulls = async (pageNum = 1, reset = false) => {
+    const requestKey = `${currentOwner}/${currentRepo}`;
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
 
@@ -272,6 +335,7 @@ export default function App() {
       const response = await fetch(
         `/api/pulls?state=${stateFilter}&page=${pageNum}&per_page=30&owner=${currentOwner}&repo=${currentRepo}`,
       );
+      if (repoKeyRef.current !== requestKey) return;
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         let message =
@@ -287,6 +351,7 @@ export default function App() {
         throw new Error(message);
       }
       const data: PullRequest[] = await response.json();
+      if (repoKeyRef.current !== requestKey) return;
 
       const newPulls = reset ? data : [...pulls, ...data];
       setPulls(newPulls);
@@ -304,10 +369,13 @@ export default function App() {
         }
       }
     } catch (err: any) {
+      if (repoKeyRef.current !== requestKey) return;
       setError(err.message);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (repoKeyRef.current === requestKey) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   };
 
@@ -318,6 +386,7 @@ export default function App() {
   };
 
   const handleSelectPull = async (pull: PullRequest) => {
+    const requestKey = `${currentOwner}/${currentRepo}`;
     setSelectedPull(pull);
     setLoadingFiles(true);
     setLoadingComments(true);
@@ -332,17 +401,22 @@ export default function App() {
       const filesRes = await fetch(
         `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
       );
+      if (repoKeyRef.current !== requestKey) return;
       if (filesRes.ok) {
         const data = await filesRes.json();
+        if (repoKeyRef.current !== requestKey) return;
         setFiles(data);
         if (data.length > 0) {
           setSelectedFile(data[0]);
         }
       }
     } catch (err) {
+      if (repoKeyRef.current !== requestKey) return;
       console.error("Files fetch error:", err);
     } finally {
-      setLoadingFiles(false);
+      if (repoKeyRef.current === requestKey) {
+        setLoadingFiles(false);
+      }
     }
 
     // Fetch Comments
@@ -356,13 +430,18 @@ export default function App() {
         ),
       ]);
 
+      if (repoKeyRef.current !== requestKey) return;
       if (commentsRes.ok) setComments(await commentsRes.json());
+      if (repoKeyRef.current !== requestKey) return;
       if (reviewCommentsRes.ok)
         setReviewComments(await reviewCommentsRes.json());
     } catch (err) {
+      if (repoKeyRef.current !== requestKey) return;
       console.error("Comments fetch error:", err);
     } finally {
-      setLoadingComments(false);
+      if (repoKeyRef.current === requestKey) {
+        setLoadingComments(false);
+      }
     }
   };
 
@@ -454,10 +533,8 @@ export default function App() {
                           if (e.key === "Enter") {
                             const [owner, repo] = inputRepo.split("/");
                             if (owner && repo) {
-                              setCurrentOwner(owner);
-                              setCurrentRepo(repo);
+                              switchRepo(owner, repo);
                               setShowRepoInput(false);
-                              setError(null);
                             }
                           } else if (e.key === "Escape") {
                             setShowRepoInput(false);
@@ -481,12 +558,11 @@ export default function App() {
                       <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
                   )}
-                  {currentOwner !== "bniladridas" && (
+                  {(currentOwner !== DEFAULT_OWNER ||
+                    currentRepo !== DEFAULT_REPO) && (
                     <button
                       onClick={() => {
-                        setCurrentOwner("bniladridas");
-                        setCurrentRepo("diff");
-                        setError(null);
+                        switchRepo(DEFAULT_OWNER, DEFAULT_REPO);
                       }}
                       className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white/40 transition-colors"
                     >
