@@ -6,10 +6,10 @@
 | Version | v0.1.0 |
 | Product Of | harpertoken |
 | Repository | harper |
-| Description | Specialized utility for pull request exploration and review with a clean, distraction-free interface |
-| Architecture | React + Tailwind CSS + GitHub API |
-| Features | Dual-pane design, syntax highlighting, resizable sidebar, real-time diff viewing |
-| CI | TypeScript checks, YAML lint, pre-commit hooks |
+| Description | Pull request review tool |
+| Architecture | React, Tailwind CSS, GitHub API |
+| Features | Dual-pane, syntax highlighting, real-time diff |
+| CI | TS check, YAML lint, pre-commit |
 
 ## Screenshot
 
