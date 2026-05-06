@@ -492,30 +492,30 @@ export default function App() {
       </div>
 
       {/* Header */}
-      <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-onyx/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 lg:px-12 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+      <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-onyx/90 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 lg:px-12 h-14 lg:h-20 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 lg:gap-4 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="lg:hidden p-2 -ml-2 text-white/40 hover:text-brand-orange transition-colors"
+              className="lg:hidden p-1 -ml-1 text-white/40 hover:text-brand-orange transition-colors"
             >
               <Activity
                 className={cn(
-                  "w-6 h-6 transition-transform",
+                  "w-5 h-5 transition-transform",
                   isSidebarOpen && "rotate-90",
                 )}
               />
             </button>
-            <div className="flex items-center gap-3">
-              <div className="w-5 h-5 lg:w-6 lg:h-6 bg-[#00FF41] shrink-0" />
-              <div className="flex flex-col">
-                <h1 className="text-xl lg:text-2xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
+            <div className="flex items-center gap-2 lg:gap-3 min-w-0">
+              <div className="w-3.5 h-3.5 lg:w-6 lg:h-6 bg-[#00FF41] shrink-0" />
+              <div className="flex flex-col min-w-0">
+                <h1 className="text-lg lg:text-2xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
-                  <span className="text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">
+                  <span className="hidden sm:inline text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">
                     v0.1.0
                   </span>
                 </h1>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-1.5 lg:gap-2 mt-0.5 lg:mt-1 min-w-0">
                   {showRepoInput ? (
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
@@ -542,7 +542,7 @@ export default function App() {
                         }}
                         autoFocus
                         placeholder="owner/repo"
-                        className="bg-black/40 border border-brand-orange/20 px-2 py-0.5 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-32"
+                        className="bg-black/40 border border-brand-orange/20 px-2 py-0.5 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-28 sm:w-32"
                       />
                     </motion.div>
                   ) : (
@@ -551,11 +551,13 @@ export default function App() {
                         setInputRepo(`${currentOwner}/${currentRepo}`);
                         setShowRepoInput(true);
                       }}
-                      className="text-[10px] font-mono opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1 group"
+                      className="text-[9px] lg:text-[10px] font-mono opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1 group min-w-0 max-w-[120px] sm:max-w-none"
                     >
-                      <Hash className="w-2.5 h-2.5" />
-                      {currentOwner}/{currentRepo}
-                      <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Hash className="w-2.5 h-2.5 shrink-0" />
+                      <span className="truncate">
+                        {currentOwner}/{currentRepo}
+                      </span>
+                      <RefreshCw className="hidden sm:block w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
                   )}
                   {(currentOwner !== DEFAULT_OWNER ||
@@ -564,7 +566,7 @@ export default function App() {
                       onClick={() => {
                         switchRepo(DEFAULT_OWNER, DEFAULT_REPO);
                       }}
-                      className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white/40 transition-colors"
+                      className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white/40 transition-colors shrink-0"
                     >
                       [Default]
                     </button>
@@ -598,11 +600,11 @@ export default function App() {
             onClick={() =>
               viewMode === "pulls" ? fetchPulls(1, true) : fetchBranches()
             }
-            className="p-3 border border-white/10 hover:border-brand-orange transition-all group shrink-0"
+            className="p-2 lg:p-3 border border-white/10 hover:border-brand-orange transition-all group shrink-0"
           >
             <RefreshCw
               className={cn(
-                "w-4 h-4 text-white/40 group-hover:text-brand-orange transition-colors",
+                "w-3.5 h-3.5 lg:w-4 lg:h-4 text-white/40 group-hover:text-brand-orange transition-colors",
                 loading && "animate-spin",
               )}
             />
@@ -612,7 +614,7 @@ export default function App() {
 
       <main
         className={cn(
-          "pt-20 h-screen flex overflow-hidden bg-onyx",
+          "pt-14 lg:pt-20 h-screen flex overflow-hidden bg-onyx",
           isResizing && "select-none cursor-col-resize",
         )}
         style={
@@ -624,7 +626,7 @@ export default function App() {
           style={{ width: isSidebarHidden ? 0 : undefined }}
           className={cn(
             "border-r border-white/5 bg-black/20 flex flex-col transition-all duration-300 ease-in-out z-40 relative group overflow-hidden",
-            "fixed lg:relative top-20 lg:top-0 bottom-0 left-0 lg:bottom-auto lg:inset-auto bg-onyx lg:bg-black/20",
+            "fixed lg:relative top-14 lg:top-0 bottom-0 left-0 lg:bottom-auto lg:inset-auto bg-onyx lg:bg-black/20",
             isSidebarOpen
               ? "w-[280px] sm:w-[320px] translate-x-0"
               : "w-0 lg:w-auto -translate-x-full lg:translate-x-0",
