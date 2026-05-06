@@ -25,12 +25,17 @@ async function startServer() {
       const perPage = req.query.per_page || 30;
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls?state=${state}&per_page=${perPage}&page=${page}`,
-        { headers: getHeaders("application/vnd.github.v3+json") }
+        { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      console.error("GitHub API Error (Pulls):", error.response?.data || error.message);
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      console.error(
+        "GitHub API Error (Pulls):",
+        error.response?.data || error.message,
+      );
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -39,11 +44,13 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls/${number}`,
-        { headers: getHeaders("application/vnd.github.v3.diff") }
+        { headers: getHeaders("application/vnd.github.v3.diff") },
       );
       res.send(response.data);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -52,11 +59,13 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls/${number}/files`,
-        { headers: getHeaders("application/vnd.github.v3+json") }
+        { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -65,11 +74,13 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues/${number}/comments`,
-        { headers: getHeaders("application/vnd.github.v3+json") }
+        { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -78,11 +89,13 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls/${number}/comments`,
-        { headers: getHeaders("application/vnd.github.v3+json") }
+        { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -90,11 +103,13 @@ async function startServer() {
     try {
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches`,
-        { headers: getHeaders("application/vnd.github.v3+json") }
+        { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -103,11 +118,13 @@ async function startServer() {
       const { base, head } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${base}...${head}`,
-        { headers: getHeaders("application/vnd.github.v3.diff") }
+        { headers: getHeaders("application/vnd.github.v3.diff") },
       );
       res.send(response.data);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -116,11 +133,13 @@ async function startServer() {
       const { base, head } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${base}...${head}`,
-        { headers: getHeaders("application/vnd.github.v3+json") }
+        { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data.files);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -128,11 +147,13 @@ async function startServer() {
     try {
       const response = await axios.get(
         `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`,
-        { headers: getHeaders("application/vnd.github.v3+json") }
+        { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res.status(error.response?.status || 500).json({ error: error.response?.data?.message || error.message });
+      res
+        .status(error.response?.status || 500)
+        .json({ error: error.response?.data?.message || error.message });
     }
   });
 
@@ -145,10 +166,10 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
