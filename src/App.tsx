@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 interface GithubComment {
@@ -262,6 +264,7 @@ const markdownComponents = {
         <div className="text-white/75">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw, rehypeSanitize]}
             components={markdownComponents}
           >
             {normalizeAlertMarkdown(children)}
@@ -1327,6 +1330,7 @@ export default function App() {
                         <div className="bg-white/[0.02] border border-white/5 p-8 lg:p-12 prose prose-invert prose-orange max-w-none">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeRaw, rehypeSanitize]}
                             components={markdownComponents}
                           >
                             {selectedPull.body || "_No description provided._"}
@@ -1368,6 +1372,7 @@ export default function App() {
                                   <div className="prose prose-invert prose-sm max-w-none opacity-80 leading-relaxed">
                                     <ReactMarkdown
                                       remarkPlugins={[remarkGfm]}
+                                      rehypePlugins={[rehypeRaw, rehypeSanitize]}
                                       components={markdownComponents}
                                     >
                                       {comment.body}
@@ -1431,6 +1436,7 @@ export default function App() {
                                     <div className="prose prose-invert prose-sm max-w-none opacity-70">
                                       <ReactMarkdown
                                         remarkPlugins={[remarkGfm]}
+                                        rehypePlugins={[rehypeRaw, rehypeSanitize]}
                                         components={markdownComponents}
                                       >
                                         {comment.body}
