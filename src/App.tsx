@@ -102,6 +102,8 @@ const ALERT_TYPES = {
   WARNING: "border-amber-500/20 bg-amber-500/[0.06] text-amber-300",
   CAUTION: "border-rose-500/20 bg-rose-500/[0.06] text-rose-300",
 } as const;
+const ALERT_MARKER_PATTERN =
+  /^[\s"'`{]*(?:\\?\[?!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]?|\\?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])[\]}:.\s-]*/i;
 
 const formatReviewCommentLine = (comment: GithubComment) => {
   const endLine = comment.line ?? comment.original_line;
@@ -174,7 +176,7 @@ const markdownComponents = {
   blockquote({ children }: { children?: ReactNode }) {
     const firstChild = Children.toArray(children)[0];
     const firstText = getTextContent(firstChild).trimStart();
-    const match = firstText.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/);
+    const match = firstText.match(ALERT_MARKER_PATTERN);
 
     if (!match) {
       return (
@@ -184,7 +186,7 @@ const markdownComponents = {
       );
     }
 
-    const alertType = match[1] as keyof typeof ALERT_TYPES;
+    const alertType = (match[1] ?? match[2]).toUpperCase() as keyof typeof ALERT_TYPES;
     const marker = match[0];
 
     return (
