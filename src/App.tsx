@@ -112,17 +112,15 @@ const formatReviewCommentLine = (comment: GithubComment) => {
   const startLine = comment.start_line ?? comment.original_start_line;
   const side = comment.side ?? comment.start_side;
   const isOriginal = comment.line == null && comment.original_line != null;
+  const sideLabel = side === "LEFT" ? " old" : "";
+  const originalLabel = isOriginal && side !== "LEFT" ? " original" : "";
 
   if (startLine && endLine && startLine !== endLine) {
-    return `lines ${startLine}-${endLine}${side ? ` ${side.toLowerCase()}` : ""}${
-      isOriginal ? " original" : ""
-    }`;
+    return `lines ${startLine}-${endLine}${sideLabel}${originalLabel}`;
   }
 
   if (endLine) {
-    return `line ${endLine}${side ? ` ${side.toLowerCase()}` : ""}${
-      isOriginal ? " original" : ""
-    }`;
+    return `line ${endLine}${sideLabel}${originalLabel}`;
   }
 
   if (comment.position) {
@@ -155,8 +153,8 @@ const parseDiffRows = (patch?: string): DiffRow[] => {
   if (!patch) return [];
 
   const rows: DiffRow[] = [];
-  let oldLine = 0;
-  let newLine = 0;
+  let oldLine: number | null = null;
+  let newLine: number | null = null;
 
   for (const line of patch.split("\n")) {
     const hunkMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
@@ -194,7 +192,9 @@ const parseDiffRows = (patch?: string): DiffRow[] => {
         oldLine: null,
         newLine,
       });
-      newLine += 1;
+      if (newLine != null) {
+        newLine += 1;
+      }
       continue;
     }
 
@@ -205,7 +205,9 @@ const parseDiffRows = (patch?: string): DiffRow[] => {
         oldLine,
         newLine: null,
       });
-      oldLine += 1;
+      if (oldLine != null) {
+        oldLine += 1;
+      }
       continue;
     }
 
@@ -225,8 +227,12 @@ const parseDiffRows = (patch?: string): DiffRow[] => {
       oldLine,
       newLine,
     });
-    oldLine += 1;
-    newLine += 1;
+    if (oldLine != null) {
+      oldLine += 1;
+    }
+    if (newLine != null) {
+      newLine += 1;
+    }
   }
 
   return rows;
@@ -1293,7 +1299,7 @@ export default function App() {
                                         <div className="border-r border-white/5 px-3 py-1 text-right text-white/25 select-none">
                                           {row.newLine ?? ""}
                                         </div>
-                                        <pre className="px-4 py-1 whitespace-pre-wrap break-words">
+                                        <pre className="px-4 py-1 whitespace-pre overflow-x-visible">
                                           {row.content || " "}
                                         </pre>
                                       </div>
