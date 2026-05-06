@@ -14,4 +14,4 @@ The project incorporates a robust continuous integration pipeline and pre-commit
 
 ## Disclaimer
 
-This application is provided as is without any local or global warranty. It is a specialized tool intended for browser-based code review and does not represent an official product of any associated repository owners. Users are responsible for their own environment configurations and the security of any sensitive data accessed during their sessions.
+DIFF is a product of harpertoken. The application is hosted at the harper repository. Users are responsible for their own environment configurations and the security of any sensitive data accessed during their sessions.
