@@ -24,7 +24,8 @@ import 'prismjs/components/prism-diff';
 import 'prismjs/themes/prism-tomorrow.css';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import version from '/VERSION?raw';
+
+const version = import.meta.env.VITE_APP_VERSION;
 
 interface GithubComment {
   id: number;
