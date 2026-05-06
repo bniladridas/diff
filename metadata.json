@@ -1,0 +1,6 @@
+{
+  "name": "DIFF",
+  "description": "Minimal Git Pull Request & Diff Explorer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

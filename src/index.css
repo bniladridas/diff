@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,900;1,400;1,900&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-brand-orange: #FF4D00;
+  --color-onyx: #050505;
+}
+
+@utility custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 77, 0, 0.3);
+    border-radius: 10px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 77, 0, 0.5);
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-onyx text-white antialiased selection:bg-brand-orange selection:text-white;
+  }
+
+  /* Prose Overrides for Code/Backticks */
+  .prose pre {
+    @apply !bg-black/60 !border !border-white/10 !rounded-none !p-4 !my-6 font-mono text-sm;
+  }
+  
+  .prose code {
+    @apply !bg-brand-orange/10 !text-brand-orange !px-1.5 !py-0.5 !rounded-none !font-mono !font-medium before:!content-none after:!content-none;
+  }
+
+  .prose pre code {
+    @apply !bg-transparent !p-0 !text-white/90;
+  }
+}

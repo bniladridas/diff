@@ -1,11 +1,11 @@
-<div align="center">
+# DIFF
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+DIFF is a specialized software utility focused on the exploration and review of pull requests within the harpertoken harper repository. The application prioritizes a clean and distraction free interface to facilitate the examination of code changes and their associated discussions.
 
-  <h1>Built with AI Studio</h2>
+The system architecture leverages a React frontend styled with Tailwind CSS to maintain a high level of visual density and professional rigor. It integrates directly with the GitHub API to retrieve pull request metadata, file diffs, and review comments in real time. Syntax highlighting is handled via the Prism library to ensure that diffs are legible and accurate to their respective programming languages.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+The user interface features a dual pane design with a resizable sidebar for navigation and a main workspace for deep code analysis. It includes integrated security verification processes to ensure the stability of the explorer session. Every design decision serves the primary goal of providing a high performance environment for developers who require a focused view of the evolving codebase.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Disclaimer
 
-</div>
+This application is provided as is without any local or global warranty. It is a specialized tool intended for browser-based code review and does not represent an official product of any associated repository owners. Users are responsible for their own environment configurations and the security of any sensitive data accessed during their sessions.
