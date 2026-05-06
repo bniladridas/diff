@@ -356,7 +356,11 @@ export default function App() {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
       const newWidth = e.clientX;
-      if (newWidth >= 300 && newWidth <= 600) {
+      if (newWidth < 100) {
+        setIsSidebarHidden(true);
+        setIsResizing(false);
+      } else if (newWidth >= 200 && newWidth <= 800) {
+        if (isSidebarHidden) setIsSidebarHidden(false);
         setSidebarWidth(newWidth);
       }
     };
@@ -366,8 +370,13 @@ export default function App() {
     };
 
     if (isResizing) {
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
     }
 
     return () => {
@@ -777,7 +786,17 @@ export default function App() {
           </button>
         </div>
       </header>
-
+<AnimatePresence>
+  {isSidebarOpen && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={() => setIsSidebarOpen(false)}
+      className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+    />
+  )}
+</AnimatePresence>
       <main
         className={cn(
           "pt-14 lg:pt-20 h-screen flex overflow-hidden bg-onyx",
@@ -789,9 +808,14 @@ export default function App() {
       >
         {/* Pull Requests List */}
         <aside
-          style={{ width: isSidebarHidden ? 0 : undefined }}
+          style={{ 
+            width: isSidebarHidden ? 0 : undefined,
+            transition: isResizing ? 'none' : undefined
+          }}
           className={cn(
-            "border-r border-white/5 bg-black/20 flex flex-col transition-all duration-300 ease-in-out z-40 relative group overflow-hidden",
+            "border-r border-white/5 bg-black/20 flex flex-col relative group overflow-hidden",
+            isSidebarOpen ? "z-50" : "z-40",
+            !isResizing && "transition-all duration-300 ease-in-out",
             "fixed lg:relative top-14 lg:top-0 bottom-0 left-0 lg:bottom-auto lg:inset-auto bg-onyx lg:bg-black/20",
             isSidebarOpen
               ? "w-[280px] sm:w-[320px] translate-x-0"
@@ -1038,14 +1062,20 @@ export default function App() {
         </aside>
 
         {/* Resize Handle */}
-        {!isSidebarHidden && (
-          <div
-            onMouseDown={() => setIsResizing(true)}
-            className="hidden lg:block w-px h-full bg-white/5 hover:bg-brand-orange cursor-col-resize transition-colors z-50 group px-1 flex-shrink-0"
-          >
-            <div className="w-full h-full group-hover:bg-brand-orange/20" />
-          </div>
-        )}
+        <div
+          onMouseDown={() => setIsResizing(true)}
+          className={cn(
+            "hidden lg:block w-3 h-full -ml-1.5 hover:bg-brand-orange/10 cursor-col-resize transition-all z-50 group flex-shrink-0 relative",
+            isResizing && "bg-brand-orange/20 w-1",
+            isSidebarHidden && "w-4 -ml-2 opacity-50 hover:opacity-100"
+          )}
+        >
+          <div className={cn(
+            "absolute left-1/2 -translate-x-1/2 w-px h-full bg-white/5 group-hover:bg-brand-orange transition-colors",
+            isResizing && "bg-brand-orange w-0.5",
+            isSidebarHidden && "bg-brand-orange/30 group-hover:bg-brand-orange"
+          )} />
+        </div>
 
         {/* Diff Content View */}
         <section className="flex-1 min-h-full bg-onyx relative overflow-y-auto custom-scrollbar">

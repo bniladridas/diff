@@ -13,8 +13,8 @@
 
 @utility custom-scrollbar {
   &::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 6px;
+    height: 6px;
   }
   &::-webkit-scrollbar-track {
     background: rgba(255, 255, 255, 0.02);
