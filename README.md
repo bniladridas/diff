@@ -12,6 +12,7 @@
 | CI | TS check, YAML lint, pre-commit |
 | Desktop | Sidebar, full diff view |
 | Mobile | Responsive, touch-friendly |
+| Credit | [Gemini](https://gemini.google.com) |
 
 ## Screenshot
 
