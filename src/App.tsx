@@ -272,9 +272,7 @@ export default function App() {
               <Activity className={cn("w-6 h-6 transition-transform", isSidebarOpen && "rotate-90")} />
             </button>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 lg:w-10 lg:h-10 border border-brand-orange flex items-center justify-center shrink-0">
-                <Code className="w-5 h-5 lg:w-6 lg:h-6 text-brand-orange" />
-              </div>
+              <div className="w-5 h-5 lg:w-6 lg:h-6 bg-[#00FF41] shrink-0" />
               <div>
                 <h1 className="text-xl lg:text-2xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
