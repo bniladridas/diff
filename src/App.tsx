@@ -103,7 +103,7 @@ const ALERT_TYPES = {
   CAUTION: "border-rose-500/20 bg-rose-500/[0.06] text-rose-300",
 } as const;
 const ALERT_MARKER_PATTERN =
-  /^[\s"'`{]*(?:\\?\[?!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]?|\\?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])[\]}:.\s-]*/i;
+  /^[\s"'`{“”‘’]*(?:\\?\[?!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]?|\\?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\])[\]}:.\s-]*/i;
 
 const formatReviewCommentLine = (comment: GithubComment) => {
   const endLine = comment.line ?? comment.original_line;
