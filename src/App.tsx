@@ -78,6 +78,10 @@ interface RepoInfo {
 
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
+  const [currentOwner, setCurrentOwner] = useState("bniladridas");
+  const [currentRepo, setCurrentRepo] = useState("diff");
+  const [showRepoInput, setShowRepoInput] = useState(false);
+  const [inputRepo, setInputRepo] = useState("");
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
@@ -137,7 +141,7 @@ export default function App() {
 
   useEffect(() => {
     fetchRepoInfo();
-  }, []);
+  }, [currentOwner, currentRepo]);
 
   useEffect(() => {
     if (viewMode === "pulls") {
@@ -146,12 +150,19 @@ export default function App() {
     } else {
       fetchBranches();
     }
-  }, [viewMode, stateFilter]);
+  }, [viewMode, stateFilter, currentOwner, currentRepo]);
 
   const fetchRepoInfo = async () => {
     try {
-      const res = await fetch("/api/repo");
-      if (res.ok) setRepoInfo(await res.json());
+      const res = await fetch(
+        `/api/repo?owner=${currentOwner}&repo=${currentRepo}`,
+      );
+      if (res.ok) {
+        setRepoInfo(await res.json());
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Repo info fetch error:", errorData.error || res.statusText);
+      }
     } catch (err) {
       console.error("Repo info fetch error:", err);
     }
@@ -159,9 +170,15 @@ export default function App() {
 
   const fetchBranches = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const response = await fetch("/api/branches");
-      if (!response.ok) throw new Error("Failed to fetch branches");
+      const response = await fetch(
+        `/api/branches?owner=${currentOwner}&repo=${currentRepo}`,
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to fetch branches");
+      }
       const data: Branch[] = await response.json();
       setBranches(data);
       if (data.length > 0) {
@@ -200,7 +217,7 @@ export default function App() {
       }
 
       const filesRes = await fetch(
-        `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/files`,
+        `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/files?owner=${currentOwner}&repo=${currentRepo}`,
       );
       if (filesRes.ok) {
         const data = await filesRes.json();
@@ -253,12 +270,15 @@ export default function App() {
 
     try {
       const response = await fetch(
-        `/api/pulls?state=${stateFilter}&page=${pageNum}&per_page=30`,
+        `/api/pulls?state=${stateFilter}&page=${pageNum}&per_page=30&owner=${currentOwner}&repo=${currentRepo}`,
       );
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const message =
+        let message =
           errorData.error || `Server responded with ${response.status}`;
+        if (typeof message !== "string") {
+          message = JSON.stringify(message);
+        }
         if (message.includes("rate limit")) {
           throw new Error(
             "GitHub API rate limit exceeded. Please add a GITHUB_TOKEN to secrets to increase limits.",
@@ -309,7 +329,9 @@ export default function App() {
 
     // Fetch Files
     try {
-      const filesRes = await fetch(`/api/pulls/${pull.number}/files`);
+      const filesRes = await fetch(
+        `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
+      );
       if (filesRes.ok) {
         const data = await filesRes.json();
         setFiles(data);
@@ -326,8 +348,12 @@ export default function App() {
     // Fetch Comments
     try {
       const [commentsRes, reviewCommentsRes] = await Promise.all([
-        fetch(`/api/pulls/${pull.number}/comments`),
-        fetch(`/api/pulls/${pull.number}/review-comments`),
+        fetch(
+          `/api/pulls/${pull.number}/comments?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
+        fetch(
+          `/api/pulls/${pull.number}/review-comments?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
       ]);
 
       if (commentsRes.ok) setComments(await commentsRes.json());
@@ -403,13 +429,71 @@ export default function App() {
             </button>
             <div className="flex items-center gap-3">
               <div className="w-5 h-5 lg:w-6 lg:h-6 bg-[#00FF41] shrink-0" />
-              <div>
+              <div className="flex flex-col">
                 <h1 className="text-xl lg:text-2xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
                   <span className="text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">
                     v0.1.0
                   </span>
                 </h1>
+                <div className="flex items-center gap-2 mt-1">
+                  {showRepoInput ? (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="flex items-center gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={inputRepo}
+                        onChange={(e) => setInputRepo(e.target.value)}
+                        onBlur={() => {
+                          if (!inputRepo) setShowRepoInput(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const [owner, repo] = inputRepo.split("/");
+                            if (owner && repo) {
+                              setCurrentOwner(owner);
+                              setCurrentRepo(repo);
+                              setShowRepoInput(false);
+                              setError(null);
+                            }
+                          } else if (e.key === "Escape") {
+                            setShowRepoInput(false);
+                          }
+                        }}
+                        autoFocus
+                        placeholder="owner/repo"
+                        className="bg-black/40 border border-brand-orange/20 px-2 py-0.5 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-32"
+                      />
+                    </motion.div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setInputRepo(`${currentOwner}/${currentRepo}`);
+                        setShowRepoInput(true);
+                      }}
+                      className="text-[10px] font-mono opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1 group"
+                    >
+                      <Hash className="w-2.5 h-2.5" />
+                      {currentOwner}/{currentRepo}
+                      <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  )}
+                  {currentOwner !== "bniladridas" && (
+                    <button
+                      onClick={() => {
+                        setCurrentOwner("bniladridas");
+                        setCurrentRepo("diff");
+                        setError(null);
+                      }}
+                      className="text-[8px] uppercase tracking-widest text-white/20 hover:text-white/40 transition-colors"
+                    >
+                      [Default]
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

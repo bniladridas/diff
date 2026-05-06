@@ -18,142 +18,143 @@ async function startServer() {
     return headers;
   };
 
+  const getRepoCtx = (req: any) => ({
+    owner: (req.query.owner as string) || REPO_OWNER,
+    repo: (req.query.repo as string) || REPO_NAME,
+  });
+
+  const handleError = (res: any, error: any, context: string) => {
+    const errorMsg =
+      error.response?.data?.message || error.message || "Unknown error";
+    const displayMsg =
+      typeof errorMsg === "string" ? errorMsg : JSON.stringify(errorMsg);
+    console.error(`GitHub API Error (${context}):`, displayMsg);
+    res.status(error.response?.status || 500).json({ error: displayMsg });
+  };
+
   app.get("/api/pulls", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const state = req.query.state || "open";
       const page = req.query.page || 1;
       const perPage = req.query.per_page || 30;
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls?state=${state}&per_page=${perPage}&page=${page}`,
+        `https://api.github.com/repos/${owner}/${repo}/pulls?state=${state}&per_page=${perPage}&page=${page}`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      console.error(
-        "GitHub API Error (Pulls):",
-        error.response?.data || error.message,
-      );
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "Pulls");
     }
   });
 
   app.get("/api/pulls/:number/diff", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const { number } = req.params;
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls/${number}`,
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
         { headers: getHeaders("application/vnd.github.v3.diff") },
       );
       res.send(response.data);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "Diff");
     }
   });
 
   app.get("/api/pulls/:number/files", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const { number } = req.params;
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls/${number}/files`,
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/files`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "Files");
     }
   });
 
   app.get("/api/pulls/:number/comments", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const { number } = req.params;
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues/${number}/comments`,
+        `https://api.github.com/repos/${owner}/${repo}/issues/${number}/comments`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "Comments");
     }
   });
 
   app.get("/api/pulls/:number/review-comments", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const { number } = req.params;
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/pulls/${number}/comments`,
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/comments`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "ReviewComments");
     }
   });
 
   app.get("/api/branches", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/branches`,
+        `https://api.github.com/repos/${owner}/${repo}/branches`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "Branches");
     }
   });
 
   app.get("/api/compare/:base/:head/diff", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const { base, head } = req.params;
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${base}...${head}`,
+        `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`,
         { headers: getHeaders("application/vnd.github.v3.diff") },
       );
       res.send(response.data);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "CompareDiff");
     }
   });
 
   app.get("/api/compare/:base/:head/files", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const { base, head } = req.params;
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/compare/${base}...${head}`,
+        `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data.files);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "CompareFiles");
     }
   });
 
   app.get("/api/repo", async (req, res) => {
     try {
+      const { owner, repo } = getRepoCtx(req);
       const response = await axios.get(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`,
+        `https://api.github.com/repos/${owner}/${repo}`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
-      res
-        .status(error.response?.status || 500)
-        .json({ error: error.response?.data?.message || error.message });
+      handleError(res, error, "Repo");
     }
   });
 
