@@ -275,7 +275,7 @@ async function startServer() {
     try {
       const { owner, repo } = getRepoCtx(req);
       const { check_run_id } = req.params;
-
+      
       const runDetail = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/check-runs/${check_run_id}`,
         { headers: getHeaders("application/vnd.github.v3+json") },
@@ -286,7 +286,7 @@ async function startServer() {
           `https://api.github.com/repos/${owner}/${repo}/check-runs/${check_run_id}/annotations`,
           { headers: getHeaders("application/vnd.github.v3+json") },
         ).catch(() => ({ data: [] })),
-        runDetail.data.check_suite?.id
+        runDetail.data.check_suite?.id 
           ? axios.get(
               `https://api.github.com/repos/${owner}/${repo}/check-suites/${runDetail.data.check_suite.id}/check-runs`,
               { headers: getHeaders("application/vnd.github.v3+json") }
@@ -308,27 +308,27 @@ async function startServer() {
     try {
       const { owner, repo } = getRepoCtx(req);
       const { job_id } = req.params;
-
+      
       // Try to get logs from GitHub Actions Jobs API
       // Note: check_run_id and job_id are identical for GitHub Actions
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${job_id}/logs`,
-        {
+        { 
           headers: getHeaders("application/vnd.github+json"),
           responseType: "text",
           maxRedirects: 5,
         },
       );
-
+      
       if (typeof response.data !== "string") {
         return res.status(404).json({ error: "Logs returned in unexpected format or not available" });
       }
-
+      
       res.header("Content-Type", "text/plain");
       res.send(response.data);
     } catch (error: any) {
       const status = error.response?.status || 500;
-      const message = status === 404
+      const message = status === 404 
         ? "Logs are no longer available (likely expired) or this is not a GitHub Actions run."
         : "Failed to retrieve logs from GitHub.";
       res.status(status).json({ error: message, details: error.message });
