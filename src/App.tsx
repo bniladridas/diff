@@ -30,9 +30,35 @@ import {
   Circle,
   Clock,
   CircleSlash,
+  ArrowLeft,
+  X,
+  ListChecks,
+  Terminal,
+  AlertCircle,
+  Info,
+  GitGraph,
+  Layers,
+  ArrowDown,
+  FileText,
+  History,
+  GitCommit,
+  User,
+  CheckCircle,
+  ArrowRight,
+  Sparkles,
+  Box,
+  Gift,
+  Menu,
+  Palette,
+  Settings,
+  Cpu,
+  Code2,
+  Braces,
+  Layout,
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import ReactMarkdown from "react-markdown";
+import { APP_UPDATES } from "./constants/updates";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -87,6 +113,41 @@ interface PullRequest {
     ref: string;
   };
 }
+
+interface GithubCommit {
+  sha: string;
+  html_url: string;
+  commit: {
+    author: {
+      name: string;
+      email: string;
+      date: string;
+    };
+    message: string;
+  };
+  author: {
+    login: string;
+    avatar_url: string;
+  };
+}
+
+interface GithubReview {
+  id: number;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  body: string;
+  state: string;
+  submitted_at: string;
+  html_url: string;
+}
+
+type TimelineEvent = 
+  | { type: 'pr_created'; date: string; data: PullRequest }
+  | { type: 'commit'; date: string; data: GithubCommit }
+  | { type: 'comment'; date: string; data: GithubComment }
+  | { type: 'review'; date: string; data: GithubReview };
 
 interface Branch {
   name: string;
@@ -287,6 +348,15 @@ const markdownComponents = {
   },
 };
 
+interface CheckRunStep {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  number: number;
+  started_at?: string;
+  completed_at?: string | null;
+}
+
 interface CheckRun {
   id: number;
   name: string;
@@ -295,7 +365,58 @@ interface CheckRun {
   html_url: string;
   description?: string;
   type?: "check_run" | "status";
+  started_at?: string;
+  completed_at?: string | null;
+  output?: {
+    title: string | null;
+    summary: string | null;
+    text: string | null;
+  };
+  check_suite?: {
+    head_branch: string;
+    id: number;
+  };
+  steps?: CheckRunStep[];
+  annotations?: any[];
+  suite_runs?: CheckRun[];
 }
+
+const getFileIcon = (path: string) => {
+  if (!path) return <FileCode className="w-2.5 h-2.5 text-white/20" />;
+  const ext = path.split('.').pop()?.toLowerCase();
+  
+  switch (ext) {
+    case 'rs':
+      return <Cpu className="w-2.5 h-2.5 text-brand-orange/40" />; 
+    case 'py':
+      return <Terminal className="w-2.5 h-2.5 text-sky-400/40" />;
+    case 'js':
+    case 'ts':
+    case 'tsx':
+    case 'jsx':
+      return <Code2 className="w-2.5 h-2.5 text-amber-400/40" />;
+    case 'go':
+      return <Activity className="w-2.5 h-2.5 text-blue-400/40" />;
+    case 'md':
+    case 'txt':
+    case 'doc':
+    case 'docx':
+    case 'pdf':
+      return <FileText className="w-2.5 h-2.5 text-white/20" />;
+    case 'json':
+    case 'yml':
+    case 'yaml':
+    case 'toml':
+      return <Braces className="w-2.5 h-2.5 text-white/20" />;
+    case 'html':
+      return <Layout className="w-2.5 h-2.5 text-emerald-400/40" />;
+    case 'css':
+    case 'scss':
+      return <Palette className="w-2.5 h-2.5 text-pink-400/40" />;
+    default:
+      return <FileCode className="w-2.5 h-2.5 text-white/20" />;
+  }
+};
 
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
@@ -323,9 +444,20 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState<ChangedFile | null>(null);
   const [comments, setComments] = useState<GithubComment[]>([]);
   const [reviewComments, setReviewComments] = useState<GithubComment[]>([]);
+  const [commits, setCommits] = useState<GithubCommit[]>([]);
+  const [reviews, setReviews] = useState<GithubReview[]>([]);
   const [checkRuns, setCheckRuns] = useState<CheckRun[]>([]);
-  const [activeTab, setActiveTab] = useState<"diff" | "discussion">("diff");
+  const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
+  const [selectedRunDetail, setSelectedRunDetail] = useState<CheckRun | null>(null);
+  const [loadingRunDetail, setLoadingRunDetail] = useState(false);
+  const [errorRunDetail, setErrorRunDetail] = useState<string | null>(null);
+  const [runLogs, setRunLogs] = useState<string | null>(null);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [checkDetailTab, setCheckDetailTab] = useState<"steps" | "logs">("steps");
+  const [activeTab, setActiveTab] = useState<"diff" | "discussion" | "timeline">("diff");
   const [loading, setLoading] = useState(true);
+  const [showUpdates, setShowUpdates] = useState(false);
+  const [hasNewUpdates, setHasNewUpdates] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
@@ -337,8 +469,8 @@ export default function App() {
   const [stateFilter, setStateFilter] = useState<"open" | "closed" | "all">(
     "open",
   );
-  const [theme, setTheme] = useState<"dark" | "midnight">(() => {
-    return (localStorage.getItem("diff_theme") as "dark" | "midnight") || "dark";
+  const [theme, setTheme] = useState<"dark" | "midnight" | "grey">(() => {
+    return (localStorage.getItem("diff_theme") as "dark" | "midnight" | "grey") || "dark";
   });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
@@ -352,6 +484,122 @@ export default function App() {
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
   const diffRows = parseDiffRows(selectedFile?.patch);
+ 
+  const navigateToComment = (path: string, line: number) => {
+    setActiveTab("diff");
+    const file = files.find(f => f.filename === path);
+    if (file) {
+      setSelectedFile(file);
+      // Wait for React to render the diff before scrolling
+      setTimeout(() => {
+        const id = `line-${path}-${line}`;
+        const element = document.getElementById(id);
+        if (element) {
+          element.scrollIntoView({ behavior: "smooth", block: "center" });
+          element.classList.add("bg-brand-orange/20");
+          setTimeout(() => {
+            element.classList.remove("bg-brand-orange/20");
+          }, 2000);
+        }
+      }, 500);
+    }
+  };
+
+  const getTimeline = (): TimelineEvent[] => {
+    if (!selectedPull) return [];
+    
+    const events: TimelineEvent[] = [
+      { type: 'pr_created', date: selectedPull.created_at, data: selectedPull }
+    ];
+    
+    commits.forEach(c => events.push({ type: 'commit', date: c.commit.author.date, data: c }));
+    comments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
+    reviewComments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
+    reviews.forEach(r => events.push({ type: 'review', date: r.submitted_at, data: r }));
+    
+    return events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (selectedRunId) {
+      const run = checkRuns.find((r) => r.id === selectedRunId);
+      if (!run) {
+        setSelectedRunId(null);
+        return;
+      }
+
+      const fetchLogs = async () => {
+        setLoadingLogs(true);
+        try {
+          const response = await fetch(
+            `/api/checks/${selectedRunId}/logs?owner=${currentOwner}&repo=${currentRepo}`,
+          );
+          if (response.ok) {
+            const text = await response.text();
+            setRunLogs(text);
+          }
+        } catch (error) {
+          console.error("Error fetching logs:", error);
+        } finally {
+          setLoadingLogs(false);
+        }
+      };
+
+      const fetchRunDetail = async () => {
+        setLoadingRunDetail(true);
+        setErrorRunDetail(null);
+        try {
+          const response = await fetch(
+            `/api/checks/${selectedRunId}?owner=${currentOwner}&repo=${currentRepo}`,
+          );
+          if (response.ok) {
+            const data = await response.json();
+            setSelectedRunDetail(data);
+
+            // If it's now completed, we should probably stop polling or do one last fetch
+            if (data.status === "completed" && interval) {
+                clearInterval(interval);
+            }
+          } else {
+            const errData = await response.json();
+            setErrorRunDetail(errData.error || "Failed to fetch run details from GitHub");
+            setSelectedRunDetail(run);
+          }
+        } catch (error) {
+          setErrorRunDetail(error instanceof Error ? error.message : "Network error while fetching check details");
+          setSelectedRunDetail(run);
+        } finally {
+          setLoadingRunDetail(false);
+        }
+      };
+
+      if (run.type === "status") {
+        setSelectedRunDetail(run);
+        setLoadingRunDetail(false);
+        setRunLogs(null);
+      } else {
+        fetchRunDetail();
+        fetchLogs();
+
+        // Start polling if it's in progress
+        if (run.status === "in_progress" || run.status === "queued") {
+          interval = setInterval(() => {
+            fetchRunDetail();
+            fetchLogs();
+          }, 5000); // Poll every 5 seconds
+        }
+      }
+    } else {
+      setSelectedRunDetail(null);
+      setRunLogs(null);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedRunId, checkRuns, currentOwner, currentRepo]);
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
@@ -379,6 +627,9 @@ export default function App() {
     setSelectedFile(null);
     setComments([]);
     setReviewComments([]);
+    setCommits([]);
+    setReviews([]);
+    setCheckRuns([]);
     setActiveTab("diff");
     setPage(1);
     setHasMore(true);
@@ -633,7 +884,7 @@ export default function App() {
     setCheckRuns([]);
     setActiveTab("diff");
     try {
-      const [filesRes, commentsRes, reviewCommentsRes, checksRes] = await Promise.all([
+      const [filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes] = await Promise.all([
         fetch(
           `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
         ),
@@ -645,6 +896,12 @@ export default function App() {
         ),
         fetch(
           `/api/pulls/${pull.number}/checks?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
+        fetch(
+          `/api/pulls/${pull.number}/commits?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
+        fetch(
+          `/api/pulls/${pull.number}/reviews?owner=${currentOwner}&repo=${currentRepo}`,
         ),
       ]);
 
@@ -660,6 +917,10 @@ export default function App() {
       // Process Comments
       if (commentsRes.ok) setComments(await commentsRes.json());
       if (reviewCommentsRes.ok) setReviewComments(await reviewCommentsRes.json());
+
+      // Process Commits & Reviews
+      if (commitsRes.ok) setCommits(await commitsRes.json());
+      if (reviewsRes.ok) setReviews(await reviewsRes.json());
 
       // Process Checks
       if (checksRes.ok) {
@@ -727,7 +988,7 @@ export default function App() {
 
       {/* Header */}
       <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-onyx/90 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 lg:px-12 h-14 lg:h-20 flex items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-4 lg:px-12 h-14 lg:h-20 flex items-center justify-between gap-2 lg:gap-3">
           <div className="flex items-center gap-2 lg:gap-4 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -735,17 +996,17 @@ export default function App() {
             >
               <Activity
                 className={cn(
-                  "w-5 h-5 transition-transform",
+                  "w-4 h-4 sm:w-5 h-5 transition-transform",
                   isSidebarOpen && "rotate-90",
                 )}
               />
             </button>
             <div className="flex items-center gap-2 lg:gap-3 min-w-0">
-              <div className="w-3 h-3 lg:w-4 lg:h-4 bg-white/20 shrink-0" />
+              <div className="w-3 h-3 bg-white/20 shrink-0" />
               <div className="flex flex-col min-w-0">
-                <h1 className="text-lg lg:text-xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
+                <h1 className="text-base lg:text-xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
-                  <span className="hidden sm:inline text-[7px] opacity-10 ml-3 tracking-[0.4em] font-mono">
+                  <span className="hidden md:inline text-[7px] opacity-10 ml-3 tracking-[0.4em] font-mono">
                     PROTOTYPE
                   </span>
                 </h1>
@@ -753,33 +1014,53 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4 mr-2">
+          <div className="flex items-center gap-4 lg:gap-6">
+            <div className="flex items-center gap-3 lg:gap-4">
               <button
-                onClick={() => setTheme(theme === "dark" ? "midnight" : "dark")}
-                className="flex items-center gap-3 group p-2 hover:bg-white/5 transition-all rounded-lg"
-                title={`Switch to ${theme === "dark" ? "Midnight" : "Dark Grey"} theme`}
+                onClick={() => {
+                  const themes: ("dark" | "midnight" | "grey")[] = ["dark", "midnight", "grey"];
+                  const currentIndex = themes.indexOf(theme);
+                  const nextIndex = (currentIndex + 1) % themes.length;
+                  setTheme(themes[nextIndex]);
+                }}
+                className="flex items-center gap-2 lg:gap-3 group p-1.5 lg:p-2 hover:bg-white/5 transition-all rounded-lg"
               >
-                <div className="flex gap-1.5 px-0.5">
-                  <div className={cn("w-1.5 h-1.5 rounded-full transition-all duration-300", theme === "dark" ? "bg-brand-orange scale-110" : "bg-white/10")} />
-                  <div className={cn("w-1.5 h-1.5 rounded-full transition-all duration-300", theme === "midnight" ? "bg-brand-orange scale-110" : "bg-white/10")} />
+                <div className="flex gap-1 px-0.5">
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "dark" ? "bg-brand-orange scale-110" : "bg-white/10")} />
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "midnight" ? "bg-brand-orange scale-110" : "bg-white/10")} />
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "grey" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                 </div>
-                <div className="w-[60px] overflow-hidden">
+                <div className="hidden sm:block w-[40px] lg:w-[60px] overflow-hidden">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.span
                       key={theme}
                       initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 0.2, y: 0 }}
+                      animate={{ opacity: 0.4, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       whileHover={{ opacity: 1 }}
-                      className="block text-[8px] uppercase tracking-widest font-bold text-white transition-opacity text-left"
+                      className="block text-[8px] uppercase tracking-widest font-bold text-white transition-opacity text-left text-nowrap"
                     >
-                      {theme === "dark" ? "Grey" : "Night"}
+                      {theme === "dark" ? "Onyx" : theme === "midnight" ? "Night" : "Grey"}
                     </motion.span>
                   </AnimatePresence>
                 </div>
               </button>
+              
+              <button 
+                onClick={() => {
+                  setShowUpdates(true);
+                  setHasNewUpdates(false);
+                }}
+                className="relative flex items-center gap-2 lg:gap-3 transition-all group"
+              >
+                <div className={cn(
+                  "w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full",
+                  hasNewUpdates ? "bg-brand-orange animate-pulse" : "bg-white/10 group-hover:bg-white/30"
+                )} />
+                <span className="hidden sm:inline text-[8px] uppercase tracking-[0.2em] font-medium text-white/20 group-hover:text-white/40">Evolution</span>
+              </button>
             </div>
+
             <div className="hidden lg:flex items-center gap-12 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40">
               <a
                 href="https://github.com/bniladridas/diff"
@@ -922,7 +1203,6 @@ export default function App() {
                               localStorage.setItem("diff_default_repo", JSON.stringify(newDefault));
                             }}
                             className="text-[8px] uppercase tracking-[0.2em] opacity-20 hover:opacity-100 transition-opacity shrink-0"
-                            title="Set as your default repository"
                           >
                             Set Default
                           </button>
@@ -931,7 +1211,6 @@ export default function App() {
                               switchRepo(defaultRepo.owner, defaultRepo.repo);
                             }}
                             className="text-[8px] uppercase tracking-[0.2em] opacity-20 hover:opacity-100 transition-opacity shrink-0"
-                            title={`Reset to default (${defaultRepo.owner}/${defaultRepo.repo})`}
                           >
                             Reset
                           </button>
@@ -1230,7 +1509,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="p-4 sm:p-6 lg:p-12 space-y-8 lg:space-y-12"
+                className="p-6 sm:p-6 lg:p-12 pt-12 sm:pt-6 lg:pt-12 space-y-8 lg:space-y-12"
               >
                 {/* PR/Branch Meta Header */}
                 <div className="flex flex-col xl:flex-row justify-between items-start gap-8 lg:gap-12 pb-8 lg:pb-12 border-b border-white/5">
@@ -1336,9 +1615,9 @@ export default function App() {
                     }
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full xl:w-auto px-6 py-3 border border-white/10 text-[9px] font-bold uppercase tracking-[0.4em] hover:bg-white/5 transition-all flex items-center justify-center gap-3 opacity-40 hover:opacity-100 rounded-2xl"
+                    className="flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.4em] text-white/20 hover:text-white/40 transition-all"
                   >
-                    Open Source <ExternalLink className="w-3.5 h-3.5 opacity-40" />
+                    Open Source <ExternalLink className="w-2.5 h-2.5 opacity-40" />
                   </a>
                 </div>
 
@@ -1348,13 +1627,13 @@ export default function App() {
                     <button
                       onClick={() => setActiveTab("diff")}
                       className={cn(
-                        "px-8 py-5 text-[9px] uppercase tracking-[0.5em] font-medium transition-all relative overflow-hidden group",
+                        "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group",
                         activeTab === "diff"
                           ? "text-brand-orange"
                           : "text-white/20 hover:text-white/40",
                       )}
                     >
-                      File Diff
+                      Diff
                       {activeTab === "diff" && (
                         <motion.div
                           layoutId="activeTab"
@@ -1366,13 +1645,13 @@ export default function App() {
                       <button
                         onClick={() => setActiveTab("discussion")}
                         className={cn(
-                          "px-8 py-5 text-[9px] uppercase tracking-[0.5em] font-medium transition-all relative overflow-hidden group flex items-center gap-3",
+                          "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center gap-2",
                           activeTab === "discussion"
                             ? "text-brand-orange"
                             : "text-white/20 hover:text-white/40",
                         )}
                       >
-                        Discussion
+                        Review
                         {comments.length + reviewComments.length > 0 && (
                           <span className="text-brand-orange/60 text-[8px] font-mono opacity-80">
                             ({comments.length + reviewComments.length})
@@ -1386,24 +1665,160 @@ export default function App() {
                         )}
                       </button>
                     )}
+                    <button
+                      onClick={() => setActiveTab("timeline")}
+                      className={cn(
+                        "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center gap-2",
+                        activeTab === "timeline"
+                          ? "text-brand-orange"
+                          : "text-white/20 hover:text-white/40",
+                      )}
+                    >
+                      History
+                        {activeTab === "timeline" && (
+                          <motion.div
+                            layoutId="activeTab"
+                            className="absolute bottom-0 left-0 right-0 h-[1px] bg-brand-orange"
+                          />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
 
                 {/* Tab Content */}
                 <div className="space-y-12 min-h-[600px]">
-                  {activeTab === "diff" ? (
+                  {activeTab === "timeline" ? (
+                    <div className="max-w-3xl mx-auto space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="relative space-y-12 lg:space-y-16 py-4">
+                        {/* The Vertical Line */}
+                        <div className="absolute left-[20px] top-0 bottom-0 w-px bg-white/5" />
+
+                        {getTimeline().map((event, idx) => (
+                          <motion.div 
+                            key={`${event.type}-${idx}`}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                            className="relative pl-12 sm:pl-20 group"
+                          >
+                            {/* Dot */}
+                            <div className={cn(
+                              "absolute left-4 w-[18px] h-[18px] rounded-full border-2 bg-onyx z-10 top-1 transition-transform group-hover:scale-125 duration-300 flex items-center justify-center",
+                              event.type === 'pr_created' ? "border-brand-orange" :
+                              event.type === 'commit' ? "border-sky-500/40" :
+                              event.type === 'review' ? "border-emerald-500/40" :
+                              "border-white/10"
+                            )}>
+                               {event.type === 'commit' && <GitCommit className="w-2 h-2 text-sky-500" />}
+                               {event.type === 'review' && <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />}
+                               {event.type === 'pr_created' && <ArrowDown className="w-2.5 h-2.5 text-brand-orange" />}
+                            </div>
+
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-4 text-[9px] font-mono opacity-30 uppercase tracking-widest">
+                                <span>{new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                <span>{new Date(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                {event.type === 'commit' && <span className="text-[8px] uppercase tracking-widest text-white/20">Commit</span>}
+                                {event.type === 'review' && <span className={cn(
+                                  "text-[8px] uppercase tracking-widest",
+                                  (event.data as GithubReview).state === 'APPROVED' ? "text-emerald-500/40" : "text-rose-500/40"
+                                )}>Review: {(event.data as GithubReview).state.toLowerCase()}</span>}
+                              </div>
+
+                            <div className="space-y-4 pt-1">
+                              {event.type === 'pr_created' && (
+                                <div className="space-y-4 border-l border-white/5 pl-6">
+                                  <div className="flex items-center gap-4">
+                                    <img src={event.data.user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+                                    <div>
+                                      <p className="text-sm font-medium text-white/80">{event.data.user.login} <span className="text-[9px] uppercase tracking-wider text-white/20 ml-2">Opened</span></p>
+                                    </div>
+                                  </div>
+                                  <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
+                                    <ReactMarkdown>{event.data.body || "No description provided."}</ReactMarkdown>
+                                  </div>
+                                </div>
+                              )}
+
+                              {event.type === 'commit' && (
+                                <div className="space-y-4 border-l border-white/5 pl-6">
+                                  <div className="flex items-center gap-4">
+                                    <img src={(event.data as GithubCommit).author?.avatar_url} className="w-4 h-4 rounded-full opacity-20 shrink-0" />
+                                    <div className="min-w-0">
+                                      <p className="text-[13px] font-normal text-white/40 line-clamp-2 leading-relaxed">{(event.data as GithubCommit).commit.message} <span className="text-[8px] text-white/10 font-mono ml-2">{(event.data as GithubCommit).sha.substring(0, 7)}</span></p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {event.type === 'review' && (
+                                <div className="space-y-4 border-l border-white/5 pl-6">
+                                   <div className="flex items-center gap-4">
+                                    <img src={(event.data as GithubReview).user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+                                    <div>
+                                      <p className="text-sm font-medium text-white/80">{(event.data as GithubReview).user.login} <span className={cn(
+                                        "text-[9px] uppercase tracking-widest ml-2",
+                                        (event.data as GithubReview).state === 'APPROVED' ? "text-emerald-500/40" : "text-rose-500/40"
+                                      )}>
+                                        {(event.data as GithubReview).state.replace('_', ' ')}
+                                      </span></p>
+                                    </div>
+                                  </div>
+                                  {(event.data as GithubReview).body && (
+                                    <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
+                                      <ReactMarkdown>{(event.data as GithubReview).body}</ReactMarkdown>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {event.type === 'comment' && (
+                                <div className="space-y-4 border-l border-white/5 pl-6">
+                                  <div className="flex items-center gap-4">
+                                    <img src={(event.data as GithubComment).user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+                                    <p className="text-sm font-medium text-white/80">{(event.data as GithubComment).user.login} <span className="text-[9px] uppercase tracking-widest text-white/20 ml-2">Review</span></p>
+                                  </div>
+                                  <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30">
+                                    <ReactMarkdown>{(event.data as GithubComment).body}</ReactMarkdown>
+                                  </div>
+                                  {(event.data as GithubComment).path && (
+                                    <button 
+                                      onClick={() => {
+                                        const comment = event.data as GithubComment;
+                                        const line = comment.line || comment.original_line;
+                                        if (comment.path && line) {
+                                          navigateToComment(comment.path, line);
+                                        }
+                                      }}
+                                      className="flex items-center justify-between w-full opacity-40 hover:opacity-100 transition-opacity"
+                                    >
+                                       <div className="flex items-center gap-2 overflow-hidden">
+                                          {getFileIcon((event.data as GithubComment).path)}
+                                          <span className="text-[8px] font-mono truncate">{(event.data as GithubComment).path}</span>
+                                       </div>
+                                       <div className="flex items-center gap-2">
+                                          <span className="text-[8px] font-mono">Line {(event.data as GithubComment).line || (event.data as GithubComment).original_line}</span>
+                                       </div>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : activeTab === "diff" ? (
                     <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       {/* File List */}
                       <div className="space-y-6">
                         <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                          <div className="flex items-center gap-2 text-white/20">
-                            <Hash className="w-3 h-3" />
-                            <h3 className="text-[9px] font-bold uppercase tracking-[0.4em]">
-                              Manifest
-                            </h3>
-                          </div>
-                          <span className="text-[8px] font-mono opacity-20 uppercase tracking-widest">
-                            {files.length} Entries
+                          <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
+                            Files
+                          </h3>
+                          <span className="text-[10px] font-mono text-white/10">
+                            {files.length}
                           </span>
                         </div>
                         <div className="flex flex-col border border-white/5 bg-onyx/40 max-h-[300px] lg:max-h-[600px] overflow-y-auto custom-scrollbar rounded-xl">
@@ -1486,11 +1901,6 @@ export default function App() {
                             <button
                               onClick={() => setIsFullscreen(!isFullscreen)}
                               className="text-[9px] uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity flex items-center gap-2 group"
-                              title={
-                                isFullscreen
-                                  ? "Exit Fullscreen"
-                                  : "Enter Fullscreen"
-                              }
                             >
                               {isFullscreen ? (
                                 <>
@@ -1528,8 +1938,9 @@ export default function App() {
                                     {diffRows.map((row, index) => (
                                       <div
                                         key={`${index}-${row.content}`}
+                                        id={row.newLine ? `line-${selectedFile?.filename}-${row.newLine}` : undefined}
                                         className={cn(
-                                          "grid min-w-full grid-cols-[3.5rem_3.5rem_1fr]",
+                                          "grid min-w-full grid-cols-[3.5rem_3.5rem_1fr] transition-colors duration-500",
                                           row.kind === "added" &&
                                             "bg-emerald-500/[0.08] text-emerald-300/80",
                                           row.kind === "deleted" &&
@@ -1575,82 +1986,46 @@ export default function App() {
                         <section id="ci-pipeline" className="space-y-8 scroll-mt-24">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                              <Activity className="w-5 h-5 text-brand-orange" />
-                              <h3 className="text-sm font-bold uppercase tracking-[0.3em]">
-                                CI Pipeline Status
+                              <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
+                                Pipeline
                               </h3>
                             </div>
-                            <span className="text-[10px] font-mono opacity-20 uppercase">
-                              {checkRuns.length} Total Checks
+                            <span className="text-[10px] font-mono text-white/10">
+                              {checkRuns.length}
                             </span>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {checkRuns.map((run) => (
-                              <a
+                              <button
                                 key={run.id}
-                                href={run.html_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center justify-between p-6 border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group rounded-2xl"
+                                onClick={() => setSelectedRunId(run.id)}
+                                className="flex items-center justify-between py-6 border-l border-white/5 pl-8 hover:border-brand-orange/30 transition-all group text-left w-full hover:bg-white/[0.01]"
                               >
-                                <div className="flex items-center gap-4 min-w-0">
-                                  {run.status === "completed" ? (
-                                    run.conclusion === "success" ? (
-                                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                                    ) : (run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "action_required" || run.conclusion === "startup_failure" || run.conclusion === "stale") ? (
-                                      <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-                                    ) : run.conclusion === "cancelled" ? (
-                                      <CircleSlash className="w-4 h-4 text-white/40 shrink-0" />
-                                    ) : run.conclusion === "skipped" ? (
-                                      <CircleSlash className="w-4 h-4 text-white/20 shrink-0" />
-                                    ) : (
-                                      <Circle className="w-4 h-4 text-white/20 shrink-0" />
-                                    )
-                                  ) : (
-                                    <RefreshCw className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
-                                  )}
+                                <div className="flex items-center gap-6 min-w-0">
+                                  <div className={cn(
+                                    "w-1 h-1 rounded-full",
+                                    run.conclusion === "success" ? "bg-emerald-500/40" :
+                                    (run.conclusion === "failure" || run.conclusion === "timed_out") ? "bg-rose-500/40" :
+                                    "bg-white/10"
+                                  )} />
                                     <div className="flex flex-col min-w-0">
-                                      <span className="text-[10px] font-bold uppercase tracking-widest text-white/60 group-hover:text-white transition-colors truncate">
+                                      <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 group-hover:text-white/80 transition-colors truncate">
                                         {run.name}
                                       </span>
-                                      {run.description && (
-                                        <span className="text-[9px] text-white/30 truncate max-w-md">
-                                          {run.description}
-                                        </span>
-                                      )}
-                                      <div className="flex items-center gap-2 mt-1">
-                                        <span className={cn(
-                                          "text-[8px] font-mono px-1 border uppercase rounded-sm",
-                                          run.status === "completed"
-                                            ? "opacity-20 border-white/5"
-                                            : "text-amber-500 border-amber-500/20 bg-amber-500/5 animate-pulse"
-                                        )}>
-                                          {run.status}
-                                        </span>
-                                        {run.conclusion && (
-                                          <span className={cn(
-                                            "text-[8px] font-mono px-1 border uppercase rounded-sm",
-                                            run.conclusion === "success" ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/5" :
-                                            (run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "startup_failure") ? "text-rose-500 border-rose-500/20 bg-rose-500/5" :
-                                            run.conclusion === "cancelled" ? "text-orange-500 border-orange-500/20 bg-orange-500/5" :
-                                            "opacity-40 border-white/10"
-                                          )}>
-                                            {run.conclusion}
-                                          </span>
-                                        )}
+                                      <div className="flex items-center gap-3 mt-1">
+                                        <span className="text-[9px] font-mono text-white/10">{run.conclusion || run.status}</span>
                                       </div>
                                     </div>
                                 </div>
-                                <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-20 transition-all ml-4 shrink-0" />
-                              </a>
+                              </button>
                             ))}
                           </div>
                         </section>
                       )}
 
                       {/* PR Description */}
-                      <section className="space-y-8">
-                        <div className="bg-white/[0.02] border border-white/5 p-8 lg:p-12 prose prose-invert prose-orange max-w-none rounded-3xl">
+                      <section className="space-y-6">
+                        <div className="prose prose-invert prose-orange max-w-none border-l border-white/5 pl-8 py-2">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -1663,36 +2038,33 @@ export default function App() {
 
                       {/* General Comments */}
                       {comments.length > 0 && (
-                        <section className="space-y-8">
-                          <div className="flex items-center gap-4">
-                            <MessageSquare className="w-5 h-5 text-brand-orange" />
-                            <h3 className="text-sm font-bold uppercase tracking-[0.3em]">
+                        <section className="space-y-12">
+                          <div className="flex items-center gap-4 border-b border-white/5 pb-4">
+                            <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
                               Discussion
                             </h3>
                           </div>
-                          <div className="space-y-6">
+                          <div className="space-y-12">
                             {comments.map((comment) => (
                               <div
                                 key={comment.id}
-                                className="flex gap-6 p-8 border border-white/5 bg-white/[0.01] rounded-3xl"
+                                className="flex gap-8 group"
                               >
                                 <img
                                   src={comment.user.avatar_url}
                                   alt=""
-                                  className="w-10 h-10 grayscale opacity-40 shrink-0 rounded-full"
+                                  className="w-8 h-8 grayscale opacity-20 shrink-0 rounded-full group-hover:opacity-40 transition-opacity"
                                 />
-                                <div className="space-y-6 flex-1 min-w-0">
-                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                                    <span className="text-[10px] tracking-[0.4em] font-bold uppercase opacity-60">
+                                <div className="space-y-4 flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] tracking-wider font-medium text-white/40 group-hover:text-white/60 transition-colors">
                                       {comment.user.login}
                                     </span>
-                                    <span className="text-[9px] opacity-20 font-mono">
-                                      {new Date(
-                                        comment.created_at,
-                                      ).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    <span className="text-[9px] text-white/10 font-mono">
+                                      {new Date(comment.created_at).toLocaleDateString()}
                                     </span>
                                   </div>
-                                  <div className="prose prose-invert prose-sm max-w-none opacity-80 leading-relaxed font-sans">
+                                  <div className="prose prose-invert prose-sm max-w-none text-white/50 leading-relaxed font-sans border-l border-white/5 pl-6">
                                     <ReactMarkdown
                                       remarkPlugins={[remarkGfm]}
                                       rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -1710,23 +2082,22 @@ export default function App() {
 
                       {/* Review Comments */}
                       {reviewComments.length > 0 && (
-                        <section className="space-y-8">
-                          <div className="flex items-center gap-4">
-                            <MessageCircle className="w-5 h-5 text-brand-orange" />
-                            <h3 className="text-sm font-bold uppercase tracking-[0.3em]">
+                        <section className="space-y-12">
+                          <div className="flex items-center gap-4 border-b border-white/5 pb-4">
+                            <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
                               Annotations
                             </h3>
                           </div>
-                          <div className="space-y-6">
+                          <div className="space-y-12">
                             {reviewComments.map((comment) => (
                               <div
                                 key={comment.id}
-                                className="p-8 border border-white/5 bg-brand-orange/[0.02] space-y-4 rounded-3xl"
+                                className="space-y-6 group"
                               >
-                                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                                <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
-                                    <Hash className="w-3 h-3 text-brand-orange" />
-                                    <span className="text-[10px] font-mono text-brand-orange/60">
+                                    {getFileIcon(comment.path)}
+                                    <span className="text-[9px] font-mono text-white/20">
                                       {comment.path}
                                     </span>
                                   </div>
@@ -1734,29 +2105,27 @@ export default function App() {
                                     href={comment.html_url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="text-[10px] opacity-30 hover:opacity-70 font-mono italic transition-opacity"
+                                    className="text-[9px] text-white/10 hover:text-white/40 font-mono italic transition-all"
                                   >
                                     {formatReviewCommentLine(comment)}
                                   </a>
                                 </div>
-                                <div className="flex gap-6">
+                                <div className="flex gap-8">
                                   <img
                                     src={comment.user.avatar_url}
                                     alt=""
-                                    className="w-10 h-10 border border-white/10 shrink-0 rounded-full"
+                                    className="w-8 h-8 grayscale opacity-20 shrink-0 rounded-full group-hover:opacity-40 transition-opacity"
                                   />
                                   <div className="space-y-4 flex-1">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
-                                      <span className="text-[10px] tracking-widest font-bold text-white/50">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] tracking-wider font-medium text-white/40 group-hover:text-white/60 transition-colors">
                                         {comment.user.login}
                                       </span>
-                                      <span className="text-[10px] opacity-30 font-mono">
-                                        {new Date(
-                                          comment.created_at,
-                                        ).toLocaleString()}
+                                      <span className="text-[9px] text-white/10 font-mono">
+                                        {new Date(comment.created_at).toLocaleDateString()}
                                       </span>
                                     </div>
-                                    <div className="prose prose-invert prose-sm max-w-none opacity-70">
+                                    <div className="prose prose-invert prose-sm max-w-none text-white/30 border-l border-white/5 pl-8 py-1">
                                       <ReactMarkdown
                                         remarkPlugins={[remarkGfm]}
                                         rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -1773,6 +2142,7 @@ export default function App() {
                         </section>
                       )}
 
+
                       {loadingComments && (
                         <div className="py-20 flex flex-col items-center justify-center space-y-4 opacity-20">
                           <RefreshCw className="w-8 h-8 animate-spin" />
@@ -1781,6 +2151,419 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                <AnimatePresence>
+                  {selectedRunId && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-12 pointer-events-none"
+                    >
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                        className="w-full max-w-4xl max-h-[85vh] bg-panel border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
+                      >
+                        {(() => {
+                          const run = checkRuns.find(r => r.id === selectedRunId);
+                          if (!run) return null;
+
+                          return (
+                            <>
+                              {/* Header */}
+                              <div className="p-8 border-b border-white/5 flex items-center justify-between">
+                                <div className="flex items-center gap-6">
+                                  <div className="flex flex-col">
+                                    <div className="flex items-center gap-4">
+                                      <h2 className="text-sm font-medium uppercase tracking-[0.2em] text-white/50">
+                                        {run.name}
+                                      </h2>
+                                      <div className={cn(
+                                        "w-1 h-1 rounded-full",
+                                        run.conclusion === "success" ? "bg-emerald-500/40" :
+                                        (run.conclusion === "failure" || run.conclusion === "timed_out") ? "bg-rose-500/40" :
+                                        "bg-white/10"
+                                      )} />
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => setSelectedRunId(null)}
+                                  className="text-[9px] uppercase tracking-[0.2em] text-white/10 hover:text-white/40 transition-all font-medium"
+                                >
+                                  Close
+                                </button>
+                              </div>
+
+                              {/* Content */}
+                              <div className="flex-1 overflow-y-auto p-8 lg:p-12 space-y-16 custom-scrollbar">
+                                {/* Summary Section */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-12 border-b border-white/5 pb-12">
+                                  <div className="space-y-2">
+                                    <span className="text-[8px] uppercase tracking-[0.2em] font-medium text-white/20">Status</span>
+                                    <div className="flex items-center gap-3">
+                                      <div className={cn(
+                                        "w-1.5 h-1.5 rounded-full",
+                                        run.status === "completed" ? "bg-emerald-500/40" : "bg-amber-500 animate-pulse"
+                                      )} />
+                                      <span className="text-sm font-light text-white/60">{run.status}</span>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <span className="text-[8px] uppercase tracking-[0.2em] font-medium text-white/20">Conclusion</span>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-sm font-light text-white/60 capitalize">{run.conclusion || "Pending"}</span>
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <span className="text-[8px] uppercase tracking-[0.2em] font-medium text-white/20">Execution</span>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-sm font-light text-white/60">
+                                        {run.started_at ? (
+                                          <>
+                                            {new Date(run.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
+                                            {run.completed_at && ` — ${new Date(run.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                                          </>
+                                        ) : "—"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Visual Workflow Diagram */}
+                                <div className="space-y-8">
+                                  <div className="flex items-center gap-3">
+                                    <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Pipeline</h3>
+                                  </div>
+
+                                  <div className="relative">
+                                    <div className="flex flex-wrap items-center gap-12 py-8 justify-center lg:justify-start">
+                                      {loadingRunDetail ? (
+                                        <div className="flex-1 flex items-center justify-center opacity-10">
+                                          <RefreshCw className="w-3 h-3 animate-spin mr-3" />
+                                          <span className="text-[9px] uppercase tracking-widest font-medium">Resolving...</span>
+                                        </div>
+                                      ) : selectedRunDetail?.suite_runs && selectedRunDetail.suite_runs.length > 0 ? (
+                                        selectedRunDetail.suite_runs.map((suiteRun, idx) => (
+                                          <div key={suiteRun.id} className="flex items-center shrink-0">
+                                            <button
+                                              onClick={() => setSelectedRunId(suiteRun.id)}
+                                              className={cn(
+                                                "relative pb-2 transition-all group",
+                                                suiteRun.id === run.id ? "opacity-100" : "opacity-20 hover:opacity-40"
+                                              )}
+                                            >
+                                              <div className="flex items-center gap-3">
+                                                <div className={cn(
+                                                  "w-1 h-1 rounded-full",
+                                                  suiteRun.conclusion === "success" ? "bg-emerald-500/60" : 
+                                                  suiteRun.conclusion === "failure" ? "bg-rose-500/60" : 
+                                                  "bg-white/30"
+                                                )} />
+                                                <span className="text-[10px] font-medium text-white/80 tracking-wide">{suiteRun.name}</span>
+                                              </div>
+                                              {suiteRun.id === run.id && (
+                                                <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-brand-orange/40" />
+                                              )}
+                                            </button>
+                                            {idx < selectedRunDetail.suite_runs.length - 1 && (
+                                              <div className="ml-12 text-white/5">
+                                                <ChevronRight className="w-3 h-3" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <div className="flex-1 flex flex-col items-center justify-center py-6 opacity-10">
+                                          <span className="text-[8px] uppercase tracking-widest font-medium">Single Thread Execution</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Detailed Info */}
+                                <div className="space-y-16">
+                                  {/* Metadata Grid */}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                    <div className="space-y-4">
+                                      <div className="flex items-center gap-2 text-white/10">
+                                        <span className="text-[8px] uppercase tracking-widest font-medium">Specifications</span>
+                                      </div>
+                                      <div className="space-y-3">
+                                        <div className="flex justify-between text-[11px]">
+                                          <span className="text-white/20">ID</span>
+                                          <span className="font-mono text-white/40">{run.id}</span>
+                                        </div>
+                                        <div className="flex justify-between text-[11px]">
+                                          <span className="text-white/20">Branch</span>
+                                          <span className="font-mono text-white/40">{run.check_suite?.head_branch || "n/a"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                      <div className="flex items-center gap-2 text-white/10">
+                                        <span className="text-[8px] uppercase tracking-widest font-medium">Metrics</span>
+                                      </div>
+                                      <div className="space-y-3">
+                                        <div className="flex justify-between text-[11px]">
+                                          <span className="text-white/20">Duration</span>
+                                          <span className="font-mono text-white/40">
+                                            {run.started_at && run.completed_at 
+                                              ? `${Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 60000)}m ${Math.round(((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) % 60000) / 1000)}s` 
+                                              : "Ongoing"}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between text-[11px]">
+                                          <span className="text-white/20">Latency</span>
+                                          <span className="font-mono text-white/40">{run.started_at ? new Date(run.started_at).toLocaleTimeString() : "n/a"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+
+                                  {/* Annotations Section */}
+                                  {selectedRunDetail?.annotations && selectedRunDetail.annotations.length > 0 && (
+                                    <div className="space-y-8">
+                                      <div className="flex items-center gap-3">
+                                        <AlertCircle className="w-4 h-4 text-rose-500/40" />
+                                        <h3 className="text-xs font-bold uppercase tracking-widest text-white/40">Annotations ({selectedRunDetail.annotations.length})</h3>
+                                      </div>
+                                      <div className="space-y-4">
+                                        {selectedRunDetail.annotations.map((ann, idx) => (
+                                          <div key={idx} className="p-6 bg-rose-500/[0.02] border border-rose-500/10 rounded-2xl space-y-3">
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-4">
+                                                {getFileIcon(ann.path)}
+                                                <span className="text-[10px] font-mono text-white/40 underline decoration-white/5 underline-offset-4">{ann.path}:{ann.start_line}</span>
+                                              </div>
+                                            </div>
+                                            <p className="text-xs text-white/80 font-mono leading-relaxed">{ann.message}</p>
+                                            {ann.raw_details && (
+                                              <pre className="p-4 bg-black/40 rounded-lg text-[9px] font-mono text-white/40 overflow-x-auto">
+                                                {ann.raw_details}
+                                              </pre>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Section Toggles */}
+                                  <div className="flex items-center gap-12 border-b border-white/5 pb-2 self-start">
+                                    <button
+                                      onClick={() => setCheckDetailTab("steps")}
+                                      className={cn(
+                                        "text-[10px] font-medium uppercase tracking-[0.2em] transition-all relative pb-2",
+                                        checkDetailTab === "steps" ? "text-white" : "text-white/10 hover:text-white/30"
+                                      )}
+                                    >
+                                      {checkDetailTab === "steps" && (
+                                        <motion.div layoutId="tab-active" className="absolute -bottom-[2px] left-0 right-0 h-0.5 bg-brand-orange/40" />
+                                      )}
+                                      Steps
+                                    </button>
+                                    <button
+                                      onClick={() => setCheckDetailTab("logs")}
+                                      className={cn(
+                                        "text-[10px] font-medium uppercase tracking-[0.2em] transition-all relative pb-2",
+                                        checkDetailTab === "logs" ? "text-white" : "text-white/10 hover:text-white/30"
+                                      )}
+                                    >
+                                      {checkDetailTab === "logs" && (
+                                        <motion.div layoutId="tab-active" className="absolute -bottom-[2px] left-0 right-0 h-0.5 bg-brand-orange/40" />
+                                      )}
+                                      Raw Logs
+                                    </button>
+                                  </div>
+
+                                  {checkDetailTab === "steps" ? (
+                                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                          <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Steps</h3>
+                                          {(selectedRunDetail?.status === "in_progress" || selectedRunDetail?.status === "queued") && (
+                                            <div className="flex items-center gap-2 px-1.5 py-0.5 bg-amber-500/5 border border-amber-500/10 rounded-sm">
+                                              <div className="w-1 h-1 bg-amber-500 rounded-full animate-pulse" />
+                                              <span className="text-[7px] font-medium uppercase tracking-widest text-amber-500/60">Live</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                        {selectedRunDetail?.steps && selectedRunDetail.steps.length > 0 && (
+                                          <span className="text-[8px] font-mono text-white/20 uppercase tracking-widest">
+                                            {selectedRunDetail.steps.length} Steps Found
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      <div className="space-y-4">
+                                        {errorRunDetail && (
+                                          <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl mb-4 flex items-center gap-3">
+                                            <AlertCircle className="w-4 h-4 text-rose-500" />
+                                            <span className="text-[10px] font-mono text-rose-500/80">{errorRunDetail}</span>
+                                          </div>
+                                        )}
+
+                                        {/* Main Content Area */}
+                                        {run.type === "status" ? (
+                                          <div className="p-12 bg-white/[0.01] border border-white/5 rounded-2xl flex flex-col items-center space-y-4 opacity-10">
+                                            <CircleSlash className="w-4 h-4" />
+                                            <p className="text-[10px] uppercase tracking-widest font-medium">Commit Status Point</p>
+                                          </div>
+                                        ) : loadingRunDetail ? (
+                                          <div className="py-12 flex flex-col items-center justify-center space-y-4 opacity-20">
+                                            <RefreshCw className="w-6 h-6 animate-spin" />
+                                            <p className="text-[8px] uppercase tracking-widest font-medium">Fetching details...</p>
+                                          </div>
+                                        ) : (selectedRunDetail?.steps && selectedRunDetail.steps.length > 0) ? (
+                                          <div className="space-y-6">
+                                            {selectedRunDetail.steps.map((step, idx) => (
+                                              <div 
+                                                key={step.number || idx} 
+                                                className="group animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
+                                                style={{ animationDelay: `${idx * 40}ms` }}
+                                              >
+                                                <div className="flex items-center justify-between py-1 cursor-default border-l border-white/5 pl-8 group-hover:border-white/20 transition-all">
+                                                  <div className="flex items-center gap-6">
+                                                    <div className={cn(
+                                                      "w-1 h-1 rounded-full",
+                                                      step.conclusion === "success" ? "bg-emerald-500/40" :
+                                                      step.conclusion === "failure" ? "bg-rose-500/40" :
+                                                      step.status === "in_progress" ? "bg-amber-500 animate-pulse" :
+                                                      "bg-white/10"
+                                                    )} />
+                                                    <div className="space-y-0.5">
+                                                      <span className="text-[11px] font-medium text-white/60 group-hover:text-white/80 transition-colors">{step.name}</span>
+                                                    </div>
+                                                  </div>
+                                                  <div className="flex items-center gap-8">
+                                                    <span className="text-[8px] font-mono text-white/10 uppercase tracking-[0.2em]">{step.conclusion || step.status}</span>
+                                                    {step.started_at && step.completed_at && (
+                                                      <span className="text-[9px] font-mono text-white/20 min-w-[40px] text-right">
+                                                        {Math.round((new Date(step.completed_at).getTime() - new Date(step.started_at).getTime()) / 1000)}s
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (selectedRunDetail?.output?.summary || selectedRunDetail?.output?.text) ? (
+                                          <div className="space-y-6">
+                                            <div className="p-6 bg-white/[0.02] border border-white/5 rounded-2xl space-y-4">
+                                              <div className="flex items-center gap-2 text-white/20">
+                                                <FileText className="w-3 h-3" />
+                                                <span className="text-[8px] uppercase tracking-widest font-bold font-mono">Synthesized Data Report</span>
+                                              </div>
+                                              <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/60">
+                                                <ReactMarkdown>
+                                                  {selectedRunDetail?.output?.summary || selectedRunDetail?.output?.text || ""}
+                                                </ReactMarkdown>
+                                              </div>
+                                            </div>
+                                            <div className="flex flex-col items-center py-6 opacity-20 space-y-2">
+                                              <p className="text-[8px] uppercase tracking-widest font-bold">No granular steps provided by agent</p>
+                                              <p className="text-[8px] text-center max-w-xs">Viewing high-level status summary instead of sequence data.</p>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="p-12 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col items-center space-y-4 opacity-20">
+                                            <Activity className="w-8 h-8" />
+                                            <div className="text-center space-y-1">
+                                              <p className="text-[10px] uppercase tracking-widest font-bold">No Execution Data Sequence</p>
+                                              <p className="text-[8px] max-w-xs leading-relaxed">Detailed sequence data is not available for this run. It might be in a pending state, or provided by an external integration that doesn't share step-level info.</p>
+                                            </div>
+                                            <button 
+                                              onClick={() => window.open(run.html_url, '_blank')}
+                                              className="px-6 py-2 border border-white/10 rounded-lg text-[8px] uppercase font-bold tracking-widest hover:bg-white/5 transition-all mt-4"
+                                            >
+                                              Open in GitHub
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                          <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Logs</h3>
+                                          {(selectedRunDetail?.status === "in_progress" || selectedRunDetail?.status === "queued") && (
+                                            <div className="flex items-center gap-2 px-1.5 py-0.5 bg-brand-orange/5 border border-brand-orange/10 rounded-sm">
+                                              <div className="w-1 h-1 bg-brand-orange rounded-full animate-pulse" />
+                                              <span className="text-[7px] font-medium uppercase tracking-widest text-brand-orange/60">Streaming</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                        {runLogs && (
+                                          <span className="text-[8px] font-mono text-white/20 uppercase tracking-widest">
+                                            {runLogs.split('\n').length.toLocaleString()} Lines
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      <div className="bg-transparent border-l border-white/5 relative group">
+                                        <div className="absolute top-4 right-4 z-10 flex gap-2">
+                                          {loadingLogs && (
+                                            <div className="px-2 py-1 border border-white/5 rounded flex items-center gap-2">
+                                              <RefreshCw className="w-2.5 h-2.5 animate-spin text-white/10" />
+                                              <span className="text-[8px] uppercase tracking-widest font-medium text-white/10">Streaming...</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <div className="p-8 font-mono text-[11px] leading-relaxed text-white/30 overflow-x-auto whitespace-pre overflow-y-auto custom-scrollbar min-h-[400px] max-h-[700px]">
+                                            {runLogs ? (
+                                              runLogs
+                                            ) : loadingLogs ? (
+                                              <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-10">
+                                                <RefreshCw className="w-8 h-8 animate-spin" />
+                                                <p className="text-[9px] uppercase tracking-widest font-medium text-white/5">Fetching output...</p>
+                                              </div>
+                                            ) : (
+                                              <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-10">
+                                                <Activity className="w-8 h-8" />
+                                                <p className="text-[9px] uppercase tracking-widest font-medium">
+                                                  {errorRunDetail ? "No data found" : "No logs available"}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* External Link Footer */}
+                                <div className="pt-8 border-t border-white/5">
+                                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                                    <p className="text-[10px] text-white/30 max-w-md">
+                                      For raw logs, artifact downloads, or detailed step-by-step breakdown of this CI run, please visit the official GitHub Actions interface.
+                                    </p>
+                                    <a
+                                      href={run.html_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group shrink-0"
+                                    >
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">Detailed Logs on GitHub</span>
+                                      <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" />
+                                    </a>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </motion.div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* System Stats Footer */}
                 <div className="pb-12" />
@@ -1800,6 +2583,92 @@ export default function App() {
           </AnimatePresence>
         </section>
       </main>
+      
+      {/* Software Updates Modal */}
+      <AnimatePresence>
+        {showUpdates && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 lg:p-12">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowUpdates(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-onyx border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              {/* Modal Header */}
+              <div className="p-8 pb-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Evolution</h2>
+                </div>
+                <button
+                  onClick={() => setShowUpdates(false)}
+                  className="text-[9px] uppercase tracking-[0.2em] text-white/10 hover:text-white/40 transition-all font-medium"
+                >
+                  Close
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="flex-1 overflow-y-auto p-8 space-y-12 custom-scrollbar">
+                {APP_UPDATES.map((update, idx) => (
+                  <div key={update.version} className="relative pl-10 group">
+                    {/* Connector line */}
+                    {idx !== APP_UPDATES.length - 1 && (
+                      <div className="absolute left-[15px] top-8 bottom-0 w-px bg-white/5" />
+                    )}
+                    
+                    {/* Version Indicator */}
+                    <div className="absolute left-0 top-2 w-4 h-4 flex items-center justify-center z-10">
+                      <div className="w-1 h-1 rounded-full bg-white/10 group-hover:bg-brand-orange/40 transition-colors" />
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-medium text-white/60 group-hover:text-white/80 transition-colors">
+                            {update.title}
+                          </span>
+                          {update.category === "planned" && (
+                            <span className="text-[7px] uppercase tracking-widest px-1 py-0.5 border border-white/5 text-white/20 rounded">
+                              Planned
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[9px] font-mono text-white/10">{update.date}</span>
+                      </div>
+                      
+                      <p className="text-[11px] text-white/30 leading-relaxed">{update.description}</p>
+                      
+                      <div className="grid grid-cols-1 gap-1">
+                        {update.details.map((detail, dIdx) => (
+                          <div key={dIdx} className="flex items-start gap-4 py-0.5">
+                            <div className="mt-1.5 w-0.5 h-0.5 bg-white/10 rounded-full shrink-0" />
+                            <span className="text-[10px] text-white/40 leading-relaxed">{detail}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-6 bg-white/[0.02] border-t border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="text-[9px] uppercase tracking-widest font-medium text-emerald-500/40">Production</span>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <style
         dangerouslySetInnerHTML={{
