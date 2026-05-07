@@ -1,0 +1,55 @@
+name: Nightly Prerelease
+
+"on":
+  workflow_dispatch:
+  schedule:
+    - cron: "15 19 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-prerelease
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_NIGHTLY_RELEASES == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Compute nightly metadata
+        id: nightly
+        run: |
+          stamp="$(date -u +%Y%m%d-%H%M)"
+          short_sha="${GITHUB_SHA::7}"
+          echo "tag=nightly-${stamp}-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "name=Nightly ${stamp} (${short_sha})" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.nightly.outputs.tag }}
+          name: ${{ steps.nightly.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          body: |
+            Automated nightly prerelease from `${{ github.ref_name }}` at `${{ github.sha }}`.
+          files: |
+            dist/*

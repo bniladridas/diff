@@ -10,3 +10,9 @@ This repository now treats the release line as:
 The in-app `Evolution` feed in `src/constants/updates.ts` should stay aligned with these tags and GitHub releases.
 
 GitHub release automation is handled by `.github/workflows/release.yml` and requires `contents: write` so tag pushes can publish releases and upload `dist/*`.
+
+Nightly prereleases are handled by `.github/workflows/nightly-prerelease.yml`.
+
+- Scheduled runs stay dormant until the repo variable `ENABLE_NIGHTLY_RELEASES` is set to `true`.
+- `workflow_dispatch` can be used to validate the prerelease flow without turning on the nightly schedule.
+- Nightly prereleases are marked as prereleases and do not become the repo's latest stable release.
