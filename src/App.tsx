@@ -337,12 +337,15 @@ export default function App() {
   const [stateFilter, setStateFilter] = useState<"open" | "closed" | "all">(
     "open",
   );
+  const [theme, setTheme] = useState<"dark" | "midnight">(() => {
+    return (localStorage.getItem("diff_theme") as "dark" | "midnight") || "dark";
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [captchaInput, setCaptchaInput] = useState("");
   const [captchaChallenge] = useState(() => {
-    const a = Math.floor(Math.random() * 5) + 1;
-    const b = Math.floor(Math.random() * 5) + 1;
+    const a = Math.floor(Math.random() * 4) + 2;
+    const b = Math.floor(Math.random() * 4) + 1;
     return { a, b, sum: a + b };
   });
   const [page, setPage] = useState(1);
@@ -356,6 +359,11 @@ export default function App() {
       element.scrollIntoView({ behavior: "smooth" });
     }
   };
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("diff_theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     repoKeyRef.current = `${currentOwner}/${currentRepo}`;
@@ -431,11 +439,11 @@ export default function App() {
   }, [currentOwner, currentRepo]);
 
   useEffect(() => {
+    setPage(1);
     if (viewMode === "pulls") {
-      setPage(1);
       fetchPulls(1, true);
     } else {
-      fetchBranches();
+      fetchBranches(1, true);
     }
   }, [viewMode, stateFilter, currentOwner, currentRepo]);
 
@@ -460,16 +468,17 @@ export default function App() {
     return null;
   };
 
-  const fetchBranches = async () => {
+  const fetchBranches = async (pageNum = 1, reset = false) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
-    setLoading(true);
+    if (pageNum === 1) setLoading(true);
+    else setLoadingMore(true);
     setError(null);
     try {
       const comparisonRepoInfo = repoInfo ?? (await fetchRepoInfo());
       if (repoKeyRef.current !== requestKey) return;
 
       const response = await fetch(
-        `/api/branches?owner=${currentOwner}&repo=${currentRepo}`,
+        `/api/branches?page=${pageNum}&per_page=30&owner=${currentOwner}&repo=${currentRepo}`,
       );
       if (repoKeyRef.current !== requestKey) return;
       if (!response.ok) {
@@ -478,13 +487,19 @@ export default function App() {
       }
       const data: Branch[] = await response.json();
       if (repoKeyRef.current !== requestKey) return;
-      setBranches(data);
-      if (data.length > 0) {
-        handleSelectBranch(data[0], comparisonRepoInfo);
-      } else {
-        setSelectedBranch(null);
-        setFiles([]);
-        setSelectedFile(null);
+
+      const newBranches = reset ? data : [...branches, ...data];
+      setBranches(newBranches);
+      setHasMore(data.length === 30);
+
+      if (reset) {
+        if (data.length > 0) {
+          handleSelectBranch(data[0], comparisonRepoInfo);
+        } else {
+          setSelectedBranch(null);
+          setFiles([]);
+          setSelectedFile(null);
+        }
       }
     } catch (err: any) {
       if (repoKeyRef.current !== requestKey) return;
@@ -492,6 +507,7 @@ export default function App() {
     } finally {
       if (repoKeyRef.current === requestKey) {
         setLoading(false);
+        setLoadingMore(false);
       }
     }
   };
@@ -598,7 +614,11 @@ export default function App() {
   const loadMore = () => {
     const nextPage = page + 1;
     setPage(nextPage);
-    fetchPulls(nextPage);
+    if (viewMode === "pulls") {
+      fetchPulls(nextPage);
+    } else {
+      fetchBranches(nextPage);
+    }
   };
 
   const handleSelectPull = async (pull: PullRequest) => {
@@ -673,20 +693,22 @@ export default function App() {
             {captchaChallenge.a} + {captchaChallenge.b}
           </div>
 
-          <input
-            type="text"
-            value={captchaInput}
-            onChange={(e) => {
-              const val = e.target.value;
-              setCaptchaInput(val);
-              if (parseInt(val) === captchaChallenge.sum) {
-                setIsVerified(true);
-              }
-            }}
-            autoFocus
-            className="w-full bg-transparent border-b border-white/10 py-2 text-center text-lg text-brand-orange focus:border-brand-orange/40 outline-none transition-colors placeholder:text-white/5"
-            placeholder="?"
-          />
+            <div className="flex bg-white/5 p-1 rounded-2xl">
+              <input
+                type="text"
+                value={captchaInput}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCaptchaInput(val);
+                  if (parseInt(val) === captchaChallenge.sum) {
+                    setIsVerified(true);
+                  }
+                }}
+                autoFocus
+                className="w-full bg-transparent p-4 text-center text-xl text-brand-orange outline-none transition-colors placeholder:text-white/5 font-bold"
+                placeholder="?"
+              />
+            </div>
 
           <div className="text-[8px] uppercase tracking-[0.2em] opacity-10 pt-4">
             Awaiting input
@@ -719,12 +741,12 @@ export default function App() {
               />
             </button>
             <div className="flex items-center gap-2 lg:gap-3 min-w-0">
-              <div className="w-3.5 h-3.5 lg:w-6 lg:h-6 bg-[#00FF41] shrink-0" />
+              <div className="w-3 h-3 lg:w-4 lg:h-4 bg-white/20 shrink-0" />
               <div className="flex flex-col min-w-0">
-                <h1 className="text-lg lg:text-2xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
+                <h1 className="text-lg lg:text-xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
-                  <span className="hidden sm:inline text-[8px] opacity-20 ml-3 tracking-[0.3em] font-mono">
-                    v0.1.0
+                  <span className="hidden sm:inline text-[7px] opacity-10 ml-3 tracking-[0.4em] font-mono">
+                    PROTOTYPE
                   </span>
                 </h1>
               </div>
@@ -732,6 +754,32 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4 mr-2">
+              <button
+                onClick={() => setTheme(theme === "dark" ? "midnight" : "dark")}
+                className="flex items-center gap-3 group p-2 hover:bg-white/5 transition-all rounded-lg"
+                title={`Switch to ${theme === "dark" ? "Midnight" : "Dark Grey"} theme`}
+              >
+                <div className="flex gap-1.5 px-0.5">
+                  <div className={cn("w-1.5 h-1.5 rounded-full transition-all duration-300", theme === "dark" ? "bg-brand-orange scale-110" : "bg-white/10")} />
+                  <div className={cn("w-1.5 h-1.5 rounded-full transition-all duration-300", theme === "midnight" ? "bg-brand-orange scale-110" : "bg-white/10")} />
+                </div>
+                <div className="w-[60px] overflow-hidden">
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                      key={theme}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 0.2, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      whileHover={{ opacity: 1 }}
+                      className="block text-[8px] uppercase tracking-widest font-bold text-white transition-opacity text-left"
+                    >
+                      {theme === "dark" ? "Grey" : "Night"}
+                    </motion.span>
+                  </AnimatePresence>
+                </div>
+              </button>
+            </div>
             <div className="hidden lg:flex items-center gap-12 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40">
               <a
                 href="https://github.com/bniladridas/diff"
@@ -745,9 +793,21 @@ export default function App() {
 
             <button
               onClick={() => setIsSidebarHidden(!isSidebarHidden)}
-              className="hidden lg:flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40 hover:text-brand-orange transition-colors"
+              className="hidden lg:flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40 hover:text-brand-orange transition-colors min-w-[120px] justify-end"
             >
-              {isSidebarHidden ? "Show" : "Hide"} Panel
+              <div className="relative h-4 w-full flex items-center justify-end">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={isSidebarHidden ? "show" : "hide"}
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    className="absolute right-0 whitespace-nowrap"
+                  >
+                    {isSidebarHidden ? "Show" : "Hide"} Panel
+                  </motion.span>
+                </AnimatePresence>
+              </div>
             </button>
           </div>
 
@@ -755,7 +815,7 @@ export default function App() {
             onClick={() =>
               viewMode === "pulls" ? fetchPulls(1, true) : fetchBranches()
             }
-            className="p-2 lg:p-3 border border-white/10 hover:border-brand-orange transition-all group shrink-0"
+            className="p-2 lg:p-3 border border-white/10 hover:border-brand-orange transition-all group shrink-0 rounded-lg"
           >
             <RefreshCw
               className={cn(
@@ -833,7 +893,7 @@ export default function App() {
                       }}
                       autoFocus
                       placeholder="owner/repo"
-                      className="bg-black/40 border border-brand-orange/20 px-2 py-1 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-full"
+                      className="bg-black/20 border border-brand-orange/20 px-2 py-1 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-full rounded-sm"
                     />
                   </motion.div>
                 ) : (
@@ -957,13 +1017,13 @@ export default function App() {
               </div>
 
               {viewMode === "pulls" && (
-                <div className="flex border border-white/5 p-1 bg-black/40">
+                <div className="flex border border-white/5 p-1 bg-black/20 rounded-lg">
                   {(["open", "closed", "all"] as const).map((s) => (
                     <button
                       key={s}
                       onClick={() => setStateFilter(s)}
                       className={cn(
-                        "flex-1 py-2 text-[8px] lg:text-[10px] uppercase tracking-widest font-bold transition-all",
+                        "flex-1 py-2 text-[8px] lg:text-[10px] uppercase tracking-widest font-bold transition-all rounded-md",
                         stateFilter === s
                           ? "bg-brand-orange text-white"
                           : "text-white/30 hover:text-white/60",
@@ -995,7 +1055,7 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <div className="divide-y divide-white/5">
+                <div className="p-2 space-y-1">
                   {viewMode === "pulls"
                     ? pulls.map((pull) => (
                         <button
@@ -1005,7 +1065,7 @@ export default function App() {
                             setIsSidebarOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left p-6 lg:p-8 transition-all hover:bg-white/[0.02] relative group",
+                            "w-full text-left p-6 lg:p-8 transition-all hover:bg-white/[0.02] relative group rounded-2xl",
                             selectedPull?.id === pull.id
                               ? "bg-white/[0.03]"
                               : "",
@@ -1014,7 +1074,7 @@ export default function App() {
                           {selectedPull?.id === pull.id && (
                             <motion.div
                               layoutId="active-indicator"
-                              className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange"
+                              className="absolute left-2 top-4 bottom-4 w-1 bg-brand-orange rounded-full"
                             />
                           )}
 
@@ -1023,7 +1083,7 @@ export default function App() {
                               <span className="flex items-center gap-2">
                                 #{pull.number}
                                 {pull.draft && (
-                                  <span className="text-[7px] font-mono px-1 border border-white/5 opacity-50 uppercase tracking-widest leading-tight">
+                                  <span className="text-[7px] font-mono px-1 border border-white/5 opacity-50 uppercase tracking-widest leading-tight rounded-sm">
                                     Draft
                                   </span>
                                 )}
@@ -1048,7 +1108,7 @@ export default function App() {
                               <img
                                 src={pull.user.avatar_url}
                                 alt=""
-                                className="w-4 h-4 grayscale opacity-30 group-hover:opacity-100 transition-opacity"
+                                className="w-4 h-4 grayscale opacity-30 group-hover:opacity-100 transition-opacity rounded-full"
                               />
                               <span className="text-[9px] tracking-widest opacity-20 group-hover:opacity-60 transition-opacity font-bold uppercase">
                                 {pull.user.login}
@@ -1065,7 +1125,7 @@ export default function App() {
                             setIsSidebarOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left p-6 lg:p-8 transition-all hover:bg-white/[0.02] relative group",
+                            "w-full text-left p-6 lg:p-8 transition-all hover:bg-white/[0.02] relative group rounded-2xl",
                             selectedBranch?.name === branch.name
                               ? "bg-white/[0.03]"
                               : "",
@@ -1074,7 +1134,7 @@ export default function App() {
                           {selectedBranch?.name === branch.name && (
                             <motion.div
                               layoutId="active-indicator"
-                              className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange"
+                              className="absolute left-2 top-4 bottom-4 w-1 bg-brand-orange rounded-full"
                             />
                           )}
 
@@ -1084,7 +1144,7 @@ export default function App() {
                                 <GitBranch className="w-3 h-3" />
                               </span>
                               {branch.name === repoInfo?.default_branch && (
-                                <span className="text-[8px] font-bold uppercase tracking-widest text-[#00FF41]/60 px-1.5 py-0.5 border border-[#00FF41]/20">
+                                <span className="text-[8px] font-bold uppercase tracking-widest text-[#00FF41]/60 px-1.5 py-0.5 border border-[#00FF41]/20 rounded-sm">
                                   Default
                                 </span>
                               )}
@@ -1110,7 +1170,7 @@ export default function App() {
                         </button>
                       ))}
 
-                  {viewMode === "pulls" && hasMore && (
+                  {hasMore && (
                     <div className="p-8 flex justify-center">
                       <button
                         onClick={loadMore}
@@ -1119,7 +1179,7 @@ export default function App() {
                       >
                         <div
                           className={cn(
-                            "w-10 h-10 border border-white/10 flex items-center justify-center transition-all group-hover:border-brand-orange group-hover:bg-brand-orange/5",
+                            "w-10 h-10 border border-white/10 flex items-center justify-center transition-all group-hover:border-brand-orange group-hover:bg-brand-orange/5 rounded-xl",
                             loadingMore && "animate-pulse",
                           )}
                         >
@@ -1191,7 +1251,7 @@ export default function App() {
                               #{selectedPull.number}
                             </span>
                             {selectedPull.draft && (
-                              <span className="text-[9px] font-mono px-1.5 py-0.5 border border-white/5 opacity-40 uppercase tracking-widest">
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 border border-white/5 opacity-40 uppercase tracking-widest rounded-sm">
                                 Draft
                               </span>
                             )}
@@ -1249,13 +1309,13 @@ export default function App() {
                                 )}>
                                   {checkRuns.filter(r => r.conclusion === "success").length}/{checkRuns.length} Passed
                                 </span>
-                              </div>
-                            </button>
-                            <div className="w-[1px] h-8 bg-white/10 hidden sm:block" />
-                          </>
-                        )}
+                            </div>
+                          </button>
+                          <div className="w-[1px] h-8 bg-white/10 hidden sm:block" />
+                        </>
+                      )}
 
-                        <div className="space-y-1">
+                      <div className="space-y-1">
                         <p className="text-sm font-serif italic opacity-40">
                           {selectedPull
                             ? new Date(
@@ -1276,7 +1336,7 @@ export default function App() {
                     }
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full xl:w-auto px-6 py-3 border border-white/10 text-[9px] font-bold uppercase tracking-[0.4em] hover:bg-white/5 transition-all flex items-center justify-center gap-3 opacity-40 hover:opacity-100"
+                    className="w-full xl:w-auto px-6 py-3 border border-white/10 text-[9px] font-bold uppercase tracking-[0.4em] hover:bg-white/5 transition-all flex items-center justify-center gap-3 opacity-40 hover:opacity-100 rounded-2xl"
                   >
                     Open Source <ExternalLink className="w-3.5 h-3.5 opacity-40" />
                   </a>
@@ -1346,7 +1406,7 @@ export default function App() {
                             {files.length} Entries
                           </span>
                         </div>
-                        <div className="flex flex-col border border-white/5 bg-black/40 max-h-[300px] lg:max-h-[600px] overflow-y-auto custom-scrollbar">
+                        <div className="flex flex-col border border-white/5 bg-onyx/40 max-h-[300px] lg:max-h-[600px] overflow-y-auto custom-scrollbar rounded-xl">
                           {files.length > 0 ? (
                             files.map((file) => (
                               <button
@@ -1446,7 +1506,7 @@ export default function App() {
                         </div>
 
                         <div className={cn("relative", isFullscreen && "max-w-7xl mx-auto")}>
-                          <div className="relative bg-[#080808] border border-white/5 overflow-hidden">
+                          <div className="relative bg-panel border border-white/5 overflow-hidden rounded-2xl">
                             {loadingFiles ? (
                               <div className="p-20 lg:p-32 flex flex-col items-center justify-center space-y-6 text-center">
                                 <div className="w-1.5 h-1.5 bg-brand-orange animate-pulse" />
@@ -1471,11 +1531,11 @@ export default function App() {
                                         className={cn(
                                           "grid min-w-full grid-cols-[3.5rem_3.5rem_1fr]",
                                           row.kind === "added" &&
-                                            "bg-emerald-500/[0.04] text-emerald-300/90",
+                                            "bg-emerald-500/[0.08] text-emerald-300/80",
                                           row.kind === "deleted" &&
-                                            "bg-rose-500/[0.04] text-rose-300/90",
+                                            "bg-rose-500/[0.08] text-rose-300/80",
                                           row.kind === "hunk" &&
-                                            "bg-brand-orange/[0.05] text-brand-orange/60",
+                                            "bg-brand-orange/[0.1] text-brand-orange/50",
                                           row.kind === "meta" &&
                                             "text-white/20",
                                           row.kind === "context" && "text-white/60",
@@ -1494,7 +1554,7 @@ export default function App() {
                                     ))}
                                   </div>
                                 ) : (
-                                  <pre className="w-fit min-w-full p-4 sm:p-6 lg:p-8 text-[10px] sm:text-xs lg:text-sm font-mono leading-relaxed !bg-black/40 !m-0 overflow-x-visible text-white/60">
+                                  <pre className="w-fit min-w-full p-4 sm:p-6 lg:p-8 text-[10px] sm:text-xs lg:text-sm font-mono leading-relaxed !bg-onyx/40 !m-0 overflow-x-visible text-white/60">
                                     {selectedFile
                                       ? "Binary file or no changes shown."
                                       : files.length > 0
@@ -1531,7 +1591,7 @@ export default function App() {
                                 href={run.html_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="flex items-center justify-between p-4 border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group"
+                                className="flex items-center justify-between p-6 border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all group rounded-2xl"
                               >
                                 <div className="flex items-center gap-4 min-w-0">
                                   {run.status === "completed" ? (
@@ -1560,7 +1620,7 @@ export default function App() {
                                       )}
                                       <div className="flex items-center gap-2 mt-1">
                                         <span className={cn(
-                                          "text-[8px] font-mono px-1 border uppercase",
+                                          "text-[8px] font-mono px-1 border uppercase rounded-sm",
                                           run.status === "completed"
                                             ? "opacity-20 border-white/5"
                                             : "text-amber-500 border-amber-500/20 bg-amber-500/5 animate-pulse"
@@ -1569,7 +1629,7 @@ export default function App() {
                                         </span>
                                         {run.conclusion && (
                                           <span className={cn(
-                                            "text-[8px] font-mono px-1 border uppercase",
+                                            "text-[8px] font-mono px-1 border uppercase rounded-sm",
                                             run.conclusion === "success" ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/5" :
                                             (run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "startup_failure") ? "text-rose-500 border-rose-500/20 bg-rose-500/5" :
                                             run.conclusion === "cancelled" ? "text-orange-500 border-orange-500/20 bg-orange-500/5" :
@@ -1590,7 +1650,7 @@ export default function App() {
 
                       {/* PR Description */}
                       <section className="space-y-8">
-                        <div className="bg-white/[0.02] border border-white/5 p-8 lg:p-12 prose prose-invert prose-orange max-w-none">
+                        <div className="bg-white/[0.02] border border-white/5 p-8 lg:p-12 prose prose-invert prose-orange max-w-none rounded-3xl">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -1614,12 +1674,12 @@ export default function App() {
                             {comments.map((comment) => (
                               <div
                                 key={comment.id}
-                                className="flex gap-6 p-8 border border-white/5 bg-white/[0.01]"
+                                className="flex gap-6 p-8 border border-white/5 bg-white/[0.01] rounded-3xl"
                               >
                                 <img
                                   src={comment.user.avatar_url}
                                   alt=""
-                                  className="w-10 h-10 grayscale opacity-40 shrink-0"
+                                  className="w-10 h-10 grayscale opacity-40 shrink-0 rounded-full"
                                 />
                                 <div className="space-y-6 flex-1 min-w-0">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
@@ -1661,7 +1721,7 @@ export default function App() {
                             {reviewComments.map((comment) => (
                               <div
                                 key={comment.id}
-                                className="p-8 border border-white/5 bg-brand-orange/[0.02] space-y-4"
+                                className="p-8 border border-white/5 bg-brand-orange/[0.02] space-y-4 rounded-3xl"
                               >
                                 <div className="flex items-center justify-between border-b border-white/5 pb-4">
                                   <div className="flex items-center gap-3">
@@ -1683,7 +1743,7 @@ export default function App() {
                                   <img
                                     src={comment.user.avatar_url}
                                     alt=""
-                                    className="w-10 h-10 border border-white/10 shrink-0"
+                                    className="w-10 h-10 border border-white/10 shrink-0 rounded-full"
                                   />
                                   <div className="space-y-4 flex-1">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">

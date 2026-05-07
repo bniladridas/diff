@@ -190,8 +190,10 @@ async function startServer() {
   app.get("/api/branches", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
+      const page = req.query.page || 1;
+      const perPage = req.query.per_page || 30;
       const response = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/branches`,
+        `https://api.github.com/repos/${owner}/${repo}/branches?per_page=${perPage}&page=${page}`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
       res.json(response.data);
