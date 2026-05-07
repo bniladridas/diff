@@ -1,5 +1,7 @@
 ## Repo Notes
 
+Last updated: 2026-05-08
+
 This repository now treats the release line as:
 
 - `v0.1.0` Core Diff Engine
