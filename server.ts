@@ -119,6 +119,20 @@ async function startServer() {
     }
   });
 
+  app.get("/api/pulls/:number/timeline", async (req, res) => {
+    try {
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const response = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/issues/${number}/timeline?per_page=100`,
+        { headers: getHeaders("application/vnd.github+json") },
+      );
+      res.json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "Timeline");
+    }
+  });
+
   app.get("/api/pulls/:number/commits", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);

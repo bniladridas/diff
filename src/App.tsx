@@ -151,11 +151,56 @@ interface GithubReview {
   html_url: string;
 }
 
+interface GithubTimelineEvent {
+  id?: number;
+  event: string;
+  created_at: string;
+  actor?: {
+    login: string;
+    avatar_url: string;
+    html_url?: string;
+  };
+  user?: {
+    login: string;
+    avatar_url: string;
+    html_url?: string;
+  };
+  body?: string | null;
+  html_url?: string;
+  state?: string;
+  commit_id?: string | null;
+  rename?: {
+    from: string;
+    to: string;
+  };
+  label?: {
+    name: string;
+    color?: string;
+  };
+  dismissed_review?: {
+    state?: string;
+    review_id?: number;
+    dismissal_message?: string | null;
+    dismissal_commit_id?: string | null;
+  };
+  source?: {
+    type?: string;
+    issue?: {
+      html_url?: string;
+      number?: number;
+      title?: string;
+      repository?: {
+        full_name?: string;
+      };
+    };
+  };
+}
+
 type TimelineEvent =
   | { type: 'pr_created'; date: string; data: PullRequest }
   | { type: 'commit'; date: string; data: GithubCommit }
   | { type: 'comment'; date: string; data: GithubComment }
-  | { type: 'review'; date: string; data: GithubReview };
+  | { type: 'timeline'; date: string; data: GithubTimelineEvent };
 
 interface Branch {
   name: string;
@@ -603,6 +648,7 @@ export default function App() {
   const [reviewComments, setReviewComments] = useState<GithubComment[]>([]);
   const [commits, setCommits] = useState<GithubCommit[]>([]);
   const [reviews, setReviews] = useState<GithubReview[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<GithubTimelineEvent[]>([]);
   const [checkRuns, setCheckRuns] = useState<CheckRun[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [selectedRunDetail, setSelectedRunDetail] = useState<CheckRun | null>(null);
@@ -664,6 +710,8 @@ export default function App() {
     }
   };
 
+  const reviewById = new Map(reviews.map((review) => [review.id, review]));
+
   const getTimeline = (): TimelineEvent[] => {
     if (!selectedPull) return [];
 
@@ -674,15 +722,304 @@ export default function App() {
     commits.forEach(c => events.push({ type: 'commit', date: c.commit.author.date, data: c }));
     comments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
     reviewComments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
-    reviews
-      .filter((review) => {
-        const state = review.state?.toUpperCase();
-        const hasBody = Boolean(review.body?.trim());
-        return state !== "COMMENTED" || hasBody;
+    timelineEvents
+      .filter((event) => event.created_at)
+      .filter((event) => {
+        if (event.event === "commented") return false;
+        if (event.event === "reviewed" && event.state?.toUpperCase() === "COMMENTED" && !event.body?.trim()) {
+          return false;
+        }
+        return true;
       })
-      .forEach(r => events.push({ type: 'review', date: r.submitted_at, data: r }));
+      .forEach((event) => events.push({ type: 'timeline', date: event.created_at, data: event }));
 
     return events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  const getTimelineMeta = (event: TimelineEvent) => {
+    if (event.type === "pr_created") {
+      return { label: "Pull Request Opened", labelClass: "text-brand-orange/40", dotClass: "border-brand-orange", icon: <ArrowDown className="w-2.5 h-2.5 text-brand-orange" /> };
+    }
+    if (event.type === "commit") {
+      return { label: "Commit", labelClass: "text-sky-500/40", dotClass: "border-sky-500/40", icon: <GitCommit className="w-2 h-2 text-sky-500" /> };
+    }
+    if (event.type === "comment") {
+      return { label: "Review Comment", labelClass: "text-white/20", dotClass: "border-white/10", icon: <MessageCircle className="w-2 h-2 text-white/30" /> };
+    }
+
+    const timelineEvent = event.data;
+    switch (timelineEvent.event) {
+      case "reviewed": {
+        const state = timelineEvent.state?.toUpperCase() ?? "COMMENTED";
+        if (state === "APPROVED") {
+          return { label: "Review: approved", labelClass: "text-emerald-500/40", dotClass: "border-emerald-500/40", icon: <CheckCircle className="w-2.5 h-2.5 text-emerald-500" /> };
+        }
+        if (state === "CHANGES_REQUESTED") {
+          return { label: "Review: changes requested", labelClass: "text-rose-500/40", dotClass: "border-rose-500/40", icon: <AlertCircle className="w-2.5 h-2.5 text-rose-500" /> };
+        }
+        if (state === "DISMISSED") {
+          return { label: "Review: dismissed", labelClass: "text-white/20", dotClass: "border-white/10", icon: <CheckCircle className="w-2.5 h-2.5 text-white/30" /> };
+        }
+        return { label: "Review: commented", labelClass: "text-white/20", dotClass: "border-white/10", icon: <MessageCircle className="w-2 h-2 text-white/30" /> };
+      }
+      case "review_dismissed":
+        return { label: "Review dismissed", labelClass: "text-rose-500/40", dotClass: "border-rose-500/40", icon: <XCircle className="w-2.5 h-2.5 text-rose-500" /> };
+      case "renamed":
+        return { label: "Title changed", labelClass: "text-white/20", dotClass: "border-white/10", icon: <History className="w-2 h-2 text-white/30" /> };
+      case "labeled":
+      case "unlabeled":
+        return { label: timelineEvent.event === "labeled" ? "Label added" : "Label removed", labelClass: "text-white/20", dotClass: "border-white/10", icon: <Hash className="w-2 h-2 text-white/30" /> };
+      case "head_ref_force_pushed":
+        return { label: "Force pushed", labelClass: "text-white/20", dotClass: "border-white/10", icon: <ArrowRight className="w-2 h-2 text-white/30" /> };
+      case "added_to_project_v2":
+      case "project_v2_item_status_changed":
+        return { label: "Project updated", labelClass: "text-white/20", dotClass: "border-white/10", icon: <Box className="w-2 h-2 text-white/30" /> };
+      case "convert_to_draft":
+        return { label: "Converted to draft", labelClass: "text-white/20", dotClass: "border-white/10", icon: <CircleSlash className="w-2 h-2 text-white/30" /> };
+      case "ready_for_review":
+        return { label: "Ready for review", labelClass: "text-emerald-500/40", dotClass: "border-emerald-500/40", icon: <CheckCircle className="w-2.5 h-2.5 text-emerald-500" /> };
+      case "cross-referenced":
+        return { label: "Linked issue", labelClass: "text-white/20", dotClass: "border-white/10", icon: <ExternalLink className="w-2 h-2 text-white/30" /> };
+      default:
+        return { label: timelineEvent.event.replace(/_/g, " "), labelClass: "text-white/20", dotClass: "border-white/10", icon: <Circle className="w-2 h-2 text-white/20" /> };
+    }
+  };
+
+  const renderTimelineEventBody = (event: TimelineEvent) => {
+    if (event.type === "pr_created") {
+      return (
+        <div className="space-y-4 border-l border-white/5 pl-6">
+          <div className="flex items-center gap-4">
+            <img src={event.data.user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-white/80">{event.data.user.login} <span className="text-[9px] uppercase tracking-wider text-white/20 ml-2">Opened</span></p>
+            </div>
+          </div>
+          <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
+            <ReactMarkdown>{event.data.body || "No description provided."}</ReactMarkdown>
+          </div>
+        </div>
+      );
+    }
+
+    if (event.type === "commit") {
+      return (
+        <div className="space-y-4 border-l border-white/5 pl-6">
+          <div className="flex items-center gap-4">
+            <img src={event.data.author?.avatar_url} className="w-4 h-4 rounded-full opacity-20 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[13px] font-normal text-white/40 line-clamp-2 leading-relaxed">{event.data.commit.message} <span className="text-[8px] text-white/10 font-mono ml-2">{event.data.sha.substring(0, 7)}</span></p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (event.type === "comment") {
+      return (
+        <div className="space-y-4 border-l border-white/5 pl-6">
+          <div className="flex items-center gap-4">
+            <img src={event.data.user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+            <p className="text-sm font-medium text-white/80">{event.data.user.login} <span className="text-[9px] uppercase tracking-widest text-white/20 ml-2">Review</span></p>
+          </div>
+          <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30">
+            <ReactMarkdown>{event.data.body}</ReactMarkdown>
+          </div>
+          {event.data.path && (
+            <button
+              onClick={() => {
+                const line = event.data.line || event.data.original_line;
+                if (event.data.path && line) {
+                  navigateToComment(event.data.path, line);
+                }
+              }}
+              className="flex items-center justify-between w-full opacity-40 hover:opacity-100 transition-opacity"
+            >
+              <div className="flex items-center gap-2 overflow-hidden">
+                {getFileIcon(event.data.path)}
+                <span className="text-[8px] font-mono truncate">{event.data.path}</span>
+                <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                  {getFileKindLabel(event.data.path)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] font-mono">Line {event.data.line || event.data.original_line}</span>
+              </div>
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    const timelineEvent = event.data;
+    const actor = timelineEvent.actor ?? timelineEvent.user;
+    const actorName = actor?.login ?? "github";
+
+    switch (timelineEvent.event) {
+      case "reviewed": {
+        const reviewState = timelineEvent.state?.toUpperCase() ?? "COMMENTED";
+        const stateClass =
+          reviewState === "APPROVED" ? "text-emerald-500/40" :
+          reviewState === "CHANGES_REQUESTED" ? "text-rose-500/40" :
+          "text-white/20";
+        const stateLabel =
+          reviewState === "DISMISSED" ? "Previously reviewed" : reviewState.replace(/_/g, " ");
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-white/80">{actorName} <span className={cn("text-[9px] uppercase tracking-widest ml-2", stateClass)}>{stateLabel}</span></p>
+              </div>
+            </div>
+            {reviewState === "DISMISSED" ? (
+              <p className="text-[13px] font-normal text-white/40 leading-relaxed">
+                {actorName} previously approved these changes.
+              </p>
+            ) : timelineEvent.body?.trim() ? (
+              <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
+                <ReactMarkdown>{timelineEvent.body}</ReactMarkdown>
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+      case "review_dismissed": {
+        const dismissedReview = timelineEvent.dismissed_review?.review_id
+          ? reviewById.get(timelineEvent.dismissed_review.review_id)
+          : undefined;
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-white/80">
+                  {actorName}
+                  <span className="text-white/40 font-normal"> dismissed </span>
+                  <span className="text-white/80">{dismissedReview?.user.login || "a reviewer"}</span>
+                  <span className="text-white/40 font-normal">'s {timelineEvent.dismissed_review?.state || "review"}</span>
+                  {timelineEvent.dismissed_review?.dismissal_commit_id && (
+                    <span className="text-[8px] text-white/10 font-mono ml-2">{timelineEvent.dismissed_review.dismissal_commit_id.substring(0, 7)}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      case "renamed":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">changed the title</span></p>
+                <p className="text-[12px] text-white/30 leading-relaxed break-words">
+                  <span className="text-white/20 line-through">{timelineEvent.rename?.from}</span>
+                  <span className="mx-2 text-white/10">{"->"}</span>
+                  <span className="text-white/60">{timelineEvent.rename?.to}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      case "labeled":
+      case "unlabeled":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">
+                {actorName}
+                <span className="text-white/40 font-normal"> {timelineEvent.event === "labeled" ? "added" : "removed"} the </span>
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white/80 border border-white/10 bg-white/[0.04]">{timelineEvent.label?.name}</span>
+                <span className="text-white/40 font-normal"> label</span>
+              </p>
+            </div>
+          </div>
+        );
+      case "head_ref_force_pushed":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">
+                {actorName}
+                <span className="text-white/40 font-normal"> force-pushed the </span>
+                <span className="text-white/70 font-mono">{selectedPull?.head?.ref || "branch"}</span>
+                <span className="text-white/40 font-normal"> branch</span>
+                {timelineEvent.commit_id && (
+                  <span className="text-[8px] text-white/10 font-mono ml-2">{timelineEvent.commit_id.substring(0, 7)}</span>
+                )}
+              </p>
+            </div>
+          </div>
+        );
+      case "added_to_project_v2":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">added this to the project</span></p>
+            </div>
+          </div>
+        );
+      case "project_v2_item_status_changed":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">updated the project status</span></p>
+            </div>
+          </div>
+        );
+      case "convert_to_draft":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">converted this pull request to draft</span></p>
+            </div>
+          </div>
+        );
+      case "ready_for_review":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">marked this pull request ready for review</span></p>
+            </div>
+          </div>
+        );
+      case "cross-referenced":
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">
+                {actorName}
+                <span className="text-white/40 font-normal"> referenced this from </span>
+                {timelineEvent.source?.issue?.html_url ? (
+                  <a href={timelineEvent.source.issue.html_url} target="_blank" rel="noreferrer" className="text-white/70 underline decoration-white/10 underline-offset-4">
+                    {(timelineEvent.source.issue.repository?.full_name || "issue")}#{timelineEvent.source.issue.number}
+                  </a>
+                ) : (
+                  <span className="text-white/70">another issue</span>
+                )}
+              </p>
+            </div>
+          </div>
+        );
+      default:
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">{timelineEvent.event.replace(/_/g, " ")}</span></p>
+            </div>
+          </div>
+        );
+    }
   };
 
   useEffect(() => {
@@ -1014,6 +1351,7 @@ export default function App() {
           setSelectedFile(null);
           setComments([]);
           setReviewComments([]);
+          setTimelineEvents([]);
         }
       }
     } catch (err: any) {
@@ -1046,10 +1384,11 @@ export default function App() {
     setSelectedFile(null);
     setComments([]);
     setReviewComments([]);
+    setTimelineEvents([]);
     setCheckRuns([]);
     setActiveTab("diff");
     try {
-      const [filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes] = await Promise.all([
+      const [filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes, timelineRes] = await Promise.all([
         fetch(
           `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
         ),
@@ -1067,6 +1406,9 @@ export default function App() {
         ),
         fetch(
           `/api/pulls/${pull.number}/reviews?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
+        fetch(
+          `/api/pulls/${pull.number}/timeline?owner=${currentOwner}&repo=${currentRepo}`,
         ),
       ]);
 
@@ -1086,6 +1428,7 @@ export default function App() {
       // Process Commits & Reviews
       if (commitsRes.ok) setCommits(await commitsRes.json());
       if (reviewsRes.ok) setReviews(await reviewsRes.json());
+      if (timelineRes.ok) setTimelineEvents(await timelineRes.json());
 
       // Process Checks
       if (checksRes.ok) {
@@ -1882,113 +2225,34 @@ export default function App() {
                             transition={{ delay: idx * 0.05 }}
                             className="relative pl-12 sm:pl-20 group"
                           >
+                            {(() => {
+                              const meta = getTimelineMeta(event);
+                              return (
+                                <>
                             {/* Dot */}
                             <div className={cn(
                               "absolute left-4 w-[18px] h-[18px] rounded-full border-2 bg-onyx z-10 top-1 transition-transform group-hover:scale-125 duration-300 flex items-center justify-center",
-                              event.type === 'pr_created' ? "border-brand-orange" :
-                              event.type === 'commit' ? "border-sky-500/40" :
-                              event.type === 'review' ? "border-emerald-500/40" :
-                              "border-white/10"
+                              meta.dotClass,
                             )}>
-                               {event.type === 'commit' && <GitCommit className="w-2 h-2 text-sky-500" />}
-                               {event.type === 'review' && <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />}
-                               {event.type === 'pr_created' && <ArrowDown className="w-2.5 h-2.5 text-brand-orange" />}
+                              {meta.icon}
                             </div>
 
                             <div className="space-y-4">
                               <div className="flex items-center gap-4 text-[9px] font-mono opacity-30 uppercase tracking-widest">
                                 <span>{new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                 <span>{new Date(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                {event.type === 'commit' && <span className="text-[8px] uppercase tracking-widest text-white/20">Commit</span>}
-                                {event.type === 'review' && <span className={cn(
-                                  "text-[8px] uppercase tracking-widest",
-                                  (event.data as GithubReview).state === 'APPROVED' ? "text-emerald-500/40" : "text-rose-500/40"
-                                )}>Review: {(event.data as GithubReview).state.toLowerCase()}</span>}
+                                <span className={cn("text-[8px] uppercase tracking-widest", meta.labelClass)}>
+                                  {meta.label}
+                                </span>
                               </div>
 
                             <div className="space-y-4 pt-1">
-                              {event.type === 'pr_created' && (
-                                <div className="space-y-4 border-l border-white/5 pl-6">
-                                  <div className="flex items-center gap-4">
-                                    <img src={event.data.user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-                                    <div>
-                                      <p className="text-sm font-medium text-white/80">{event.data.user.login} <span className="text-[9px] uppercase tracking-wider text-white/20 ml-2">Opened</span></p>
-                                    </div>
-                                  </div>
-                                  <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
-                                    <ReactMarkdown>{event.data.body || "No description provided."}</ReactMarkdown>
-                                  </div>
-                                </div>
-                              )}
-
-                              {event.type === 'commit' && (
-                                <div className="space-y-4 border-l border-white/5 pl-6">
-                                  <div className="flex items-center gap-4">
-                                    <img src={(event.data as GithubCommit).author?.avatar_url} className="w-4 h-4 rounded-full opacity-20 shrink-0" />
-                                    <div className="min-w-0">
-                                      <p className="text-[13px] font-normal text-white/40 line-clamp-2 leading-relaxed">{(event.data as GithubCommit).commit.message} <span className="text-[8px] text-white/10 font-mono ml-2">{(event.data as GithubCommit).sha.substring(0, 7)}</span></p>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {event.type === 'review' && (
-                                <div className="space-y-4 border-l border-white/5 pl-6">
-                                   <div className="flex items-center gap-4">
-                                    <img src={(event.data as GithubReview).user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-                                    <div>
-                                      <p className="text-sm font-medium text-white/80">{(event.data as GithubReview).user.login} <span className={cn(
-                                        "text-[9px] uppercase tracking-widest ml-2",
-                                        (event.data as GithubReview).state === 'APPROVED' ? "text-emerald-500/40" : "text-rose-500/40"
-                                      )}>
-                                        {(event.data as GithubReview).state.replace('_', ' ')}
-                                      </span></p>
-                                    </div>
-                                  </div>
-                                  {(event.data as GithubReview).body && (
-                                    <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
-                                      <ReactMarkdown>{(event.data as GithubReview).body}</ReactMarkdown>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {event.type === 'comment' && (
-                                <div className="space-y-4 border-l border-white/5 pl-6">
-                                  <div className="flex items-center gap-4">
-                                    <img src={(event.data as GithubComment).user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-                                    <p className="text-sm font-medium text-white/80">{(event.data as GithubComment).user.login} <span className="text-[9px] uppercase tracking-widest text-white/20 ml-2">Review</span></p>
-                                  </div>
-                                  <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30">
-                                    <ReactMarkdown>{(event.data as GithubComment).body}</ReactMarkdown>
-                                  </div>
-                                  {(event.data as GithubComment).path && (
-                                    <button
-                                      onClick={() => {
-                                        const comment = event.data as GithubComment;
-                                        const line = comment.line || comment.original_line;
-                                        if (comment.path && line) {
-                                          navigateToComment(comment.path, line);
-                                        }
-                                      }}
-                                      className="flex items-center justify-between w-full opacity-40 hover:opacity-100 transition-opacity"
-                                    >
-                                       <div className="flex items-center gap-2 overflow-hidden">
-                                          {getFileIcon((event.data as GithubComment).path)}
-                                          <span className="text-[8px] font-mono truncate">{(event.data as GithubComment).path}</span>
-                                          <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
-                                            {getFileKindLabel((event.data as GithubComment).path)}
-                                          </span>
-                                       </div>
-                                       <div className="flex items-center gap-2">
-                                          <span className="text-[8px] font-mono">Line {(event.data as GithubComment).line || (event.data as GithubComment).original_line}</span>
-                                       </div>
-                                    </button>
-                                  )}
-                                </div>
-                              )}
+                              {renderTimelineEventBody(event)}
                             </div>
                             </div>
+                                </>
+                              );
+                            })()}
                           </motion.div>
                         ))}
                       </div>
