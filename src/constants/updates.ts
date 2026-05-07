@@ -1,6 +1,6 @@
 export interface AppUpdate {
   version: string;
-  date: string;
+  date?: string;
   title: string;
   description: string;
   category: 'feature' | 'improvement' | 'fix' | 'planned';
@@ -9,8 +9,57 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
-    version: "1.3.0",
-    date: "2024-05-08",
+    version: "0.2.0",
+    date: "2026-05-08",
+    title: "Review API & CI Surfaces",
+    description: "Expanded review data, checks, timeline views, and rendering fixes.",
+    category: "feature",
+    details: [
+      "Review API and timeline integration",
+      "Checks, annotations, and CI run detail surfaces",
+      "Markdown and embedded HTML rendering fixes",
+      "Discussion and annotation rendering cleanup"
+    ]
+  },
+  {
+    version: "0.1.2",
+    date: "2026-05-07",
+    title: "Theme Switch & UI Cleanup",
+    description: "Added theme controls and refined the visual system.",
+    category: "improvement",
+    details: [
+      "Theme switching across interface surfaces",
+      "General UI polish and layout cleanup",
+      "Lower-noise presentation refinements"
+    ]
+  },
+  {
+    version: "0.1.1",
+    date: "2026-05-06",
+    title: "Checks, Navigation & App Flow",
+    description: "Added repo flow improvements and deeper GitHub integration.",
+    category: "feature",
+    details: [
+      "GitHub checks integration",
+      "Active navigation and app-flow improvements",
+      "Performance and loading behavior cleanup"
+    ]
+  },
+  {
+    version: "0.1.0",
+    date: "2026-05-06",
+    title: "Core Diff Engine",
+    description: "Foundational review interface.",
+    category: "feature",
+    details: [
+      "Pull request listing and filtering",
+      "Branch comparison and review surface",
+      "Foundational diff viewer",
+      "Mobile-responsive adaptive layout"
+    ]
+  },
+  {
+    version: "Next",
     title: "Planned Features",
     description: "Next steps for the platform.",
     category: "planned",
@@ -20,45 +69,6 @@ export const APP_UPDATES: AppUpdate[] = [
       "Live updates via WebSockets",
       "Global full-text search across diffs",
       "Repository-wide code exploration"
-    ]
-  },
-  {
-    version: "1.2.0",
-    date: "2024-05-07",
-    title: "Pipeline Monitoring",
-    description: "Continuous integration visibility.",
-    category: "feature",
-    details: [
-      "GitHub Actions workflow integration",
-      "Live execution log streaming",
-      "Step-by-step status tracking",
-      "Action-to-code navigation"
-    ]
-  },
-  {
-    version: "1.1.0",
-    date: "2024-05-06",
-    title: "Timeline & Review",
-    description: "Sequential event processing.",
-    category: "feature",
-    details: [
-      "Unified chronological event feed",
-      "Integrated review comments display",
-      "Commit vs Review interleaving",
-      "Author/Reviewer context cards"
-    ]
-  },
-  {
-    version: "1.0.0",
-    date: "2024-05-05",
-    title: "Core Diff Engine",
-    description: "Foundational review interface.",
-    category: "feature",
-    details: [
-      "Pull request listing and filtering",
-      "Syntax-highlighted diff viewer",
-      "Multi-theme system (Onyx, Night, Grey)",
-      "Mobile-responsive adaptive layout"
     ]
   }
 ];

@@ -484,6 +484,8 @@ export default function App() {
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
   const diffRows = parseDiffRows(selectedFile?.patch);
+  const releasedUpdates = APP_UPDATES.filter((update) => update.category !== "planned");
+  const plannedUpdates = APP_UPDATES.filter((update) => update.category === "planned");
 
   const navigateToComment = (path: string, line: number) => {
     setActiveTab("diff");
@@ -1134,10 +1136,10 @@ export default function App() {
             transition: isResizing ? 'none' : undefined
           }}
           className={cn(
-            "border-r border-white/5 bg-black/20 flex flex-col relative group overflow-hidden",
+            "border-r border-white/5 bg-panel/90 backdrop-blur-md flex flex-col relative group overflow-hidden",
             isSidebarOpen ? "z-50" : "z-40",
             !isResizing && "transition-all duration-300 ease-in-out",
-            "fixed lg:relative top-14 lg:top-0 bottom-0 left-0 lg:bottom-auto lg:inset-auto bg-onyx lg:bg-black/20",
+            "fixed lg:relative top-14 lg:top-0 bottom-0 left-0 lg:bottom-auto lg:inset-auto bg-onyx lg:bg-panel/90",
             isSidebarOpen
               ? "w-[280px] sm:w-[320px] translate-x-0"
               : "w-0 lg:w-auto -translate-x-full lg:translate-x-0",
@@ -1145,9 +1147,9 @@ export default function App() {
           )}
         >
           <div className="flex flex-col h-full overflow-hidden w-[280px] sm:w-[320px] lg:w-[var(--sidebar-width)]">
-            <div className="p-4 lg:p-6 border-b border-white/5 pb-0">
+            <div className="p-4 lg:p-5 border-b border-white/5 space-y-4">
               {/* Repository Switcher moved here */}
-              <div className="flex items-center gap-1.5 lg:gap-2 mb-4 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 {showRepoInput ? (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
@@ -1174,17 +1176,17 @@ export default function App() {
                       }}
                       autoFocus
                       placeholder="owner/repo"
-                      className="bg-black/20 border border-brand-orange/20 px-2 py-1 text-[10px] font-mono text-brand-orange outline-none focus:border-brand-orange w-full rounded-sm"
+                      className="bg-black/20 border border-white/10 px-3 py-2 text-[10px] font-mono text-white/80 outline-none focus:border-brand-orange/40 w-full rounded-lg"
                     />
                   </motion.div>
                 ) : (
-                  <div className="flex-1 flex items-center justify-between min-w-0">
+                  <div className="flex-1 flex items-start justify-between gap-3 min-w-0">
                     <button
                       onClick={() => {
                         setInputRepo(`${currentOwner}/${currentRepo}`);
                         setShowRepoInput(true);
                       }}
-                      className="text-[9px] lg:text-[10px] font-mono whitespace-nowrap opacity-40 hover:opacity-100 transition-opacity flex items-center gap-1 group min-w-0 overflow-hidden"
+                      className="text-[9px] lg:text-[10px] font-mono whitespace-nowrap text-white/35 hover:text-white/70 transition-colors flex items-center gap-1.5 group min-w-0 overflow-hidden"
                     >
                       <Hash className="w-2.5 h-2.5 shrink-0" />
                       <span className="truncate">
@@ -1192,7 +1194,7 @@ export default function App() {
                       </span>
                       <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
-                    <div className="flex items-center gap-2 ml-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       {(currentOwner !== defaultRepo.owner ||
                         currentRepo !== defaultRepo.repo) && (
                         <>
@@ -1202,17 +1204,17 @@ export default function App() {
                               setDefaultRepo(newDefault);
                               localStorage.setItem("diff_default_repo", JSON.stringify(newDefault));
                             }}
-                            className="text-[8px] uppercase tracking-[0.2em] opacity-20 hover:opacity-100 transition-opacity shrink-0"
+                            className="px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-white/30 hover:text-white/70 transition-colors shrink-0 border border-white/5 rounded-md"
                           >
-                            Set Default
+                            Pin
                           </button>
                           <button
                             onClick={() => {
                               switchRepo(defaultRepo.owner, defaultRepo.repo);
                             }}
-                            className="text-[8px] uppercase tracking-[0.2em] opacity-20 hover:opacity-100 transition-opacity shrink-0"
+                            className="px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-white/30 hover:text-white/70 transition-colors shrink-0 border border-white/5 rounded-md"
                           >
-                            Reset
+                            Default
                           </button>
                         </>
                       )}
@@ -1225,7 +1227,7 @@ export default function App() {
                            localStorage.removeItem("diff_default_repo");
                            switchRepo(SYSTEM_OWNER, SYSTEM_REPO);
                          }}
-                         className="text-[8px] uppercase tracking-[0.2em] text-rose-500 opacity-20 hover:opacity-100 transition-opacity shrink-0"
+                         className="px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-rose-400/60 hover:text-rose-300 transition-colors shrink-0 border border-rose-500/10 rounded-md"
                          title="Clear custom default and reset to system default"
                        >
                          Clear
@@ -1236,54 +1238,54 @@ export default function App() {
                 )}
               </div>
 
-              <div className="flex gap-4 border-b border-white/5">
+              <div className="flex gap-2 border border-white/5 bg-black/20 rounded-xl p-1">
                 <button
                   onClick={() => setViewMode("pulls")}
                   className={cn(
-                    "pb-3 text-[10px] font-bold uppercase tracking-[0.2em] transition-all relative",
+                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.24em] transition-all relative rounded-lg",
                     viewMode === "pulls"
-                      ? "text-brand-orange"
-                      : "text-white/20 hover:text-white/40",
+                      ? "bg-white/[0.04] text-white"
+                      : "text-white/25 hover:text-white/45",
                   )}
                 >
                   Pulls
                   {viewMode === "pulls" && (
                     <motion.div
                       layoutId="viewMode"
-                      className="absolute bottom-[-1px] left-0 right-0 h-[2px] bg-brand-orange"
+                      className="absolute inset-x-3 bottom-0 h-px bg-brand-orange"
                     />
                   )}
                 </button>
                 <button
                   onClick={() => setViewMode("branches")}
                   className={cn(
-                    "pb-3 text-[10px] font-bold uppercase tracking-[0.2em] transition-all relative",
+                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.24em] transition-all relative rounded-lg",
                     viewMode === "branches"
-                      ? "text-brand-orange"
-                      : "text-white/20 hover:text-white/40",
+                      ? "bg-white/[0.04] text-white"
+                      : "text-white/25 hover:text-white/45",
                   )}
                 >
                   Branches
                   {viewMode === "branches" && (
                     <motion.div
                       layoutId="viewMode"
-                      className="absolute bottom-[-1px] left-0 right-0 h-[2px] bg-brand-orange"
+                      className="absolute inset-x-3 bottom-0 h-px bg-brand-orange"
                     />
                   )}
                 </button>
               </div>
             </div>
 
-            <div className="p-6 lg:p-8 border-b border-white/5 space-y-6 shrink-0">
+            <div className="px-4 lg:px-5 py-4 border-b border-white/5 space-y-4 shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-white/20">
                   <Activity className="w-3 h-3" />
-                  <h2 className="text-[9px] font-bold uppercase tracking-[0.4em]">
+                  <h2 className="text-[9px] font-bold uppercase tracking-[0.36em]">
                     {viewMode === "pulls" ? "Stream" : "Network"}
                   </h2>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-[9px] font-mono text-brand-orange opacity-40">
+                <div className="flex items-center gap-3">
+                  <span className="px-2 py-1 text-[9px] font-mono text-white/45 bg-white/[0.03] border border-white/5 rounded-md">
                     {viewMode === "pulls" ? pulls.length : branches.length}
                   </span>
                   <button
@@ -1296,15 +1298,15 @@ export default function App() {
               </div>
 
               {viewMode === "pulls" && (
-                <div className="flex border border-white/5 p-1 bg-black/20 rounded-lg">
+                <div className="flex border border-white/5 p-1 bg-black/20 rounded-xl">
                   {(["open", "closed", "all"] as const).map((s) => (
                     <button
                       key={s}
                       onClick={() => setStateFilter(s)}
                       className={cn(
-                        "flex-1 py-2 text-[8px] lg:text-[10px] uppercase tracking-widest font-bold transition-all rounded-md",
+                        "flex-1 py-2 text-[8px] lg:text-[10px] uppercase tracking-[0.24em] font-bold transition-all rounded-lg",
                         stateFilter === s
-                          ? "bg-brand-orange text-white"
+                          ? "bg-white/[0.05] text-white"
                           : "text-white/30 hover:text-white/60",
                       )}
                     >
@@ -1334,7 +1336,7 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <div className="p-2 space-y-1">
+                <div className="p-2 space-y-1.5">
                   {viewMode === "pulls"
                     ? pulls.map((pull) => (
                         <button
@@ -1344,25 +1346,25 @@ export default function App() {
                             setIsSidebarOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left p-6 lg:p-8 transition-all hover:bg-white/[0.02] relative group rounded-2xl",
+                            "w-full text-left p-5 lg:p-6 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
                             selectedPull?.id === pull.id
-                              ? "bg-white/[0.03]"
+                              ? "bg-white/[0.03] border-white/6"
                               : "",
                           )}
                         >
                           {selectedPull?.id === pull.id && (
                             <motion.div
                               layoutId="active-indicator"
-                              className="absolute left-2 top-4 bottom-4 w-1 bg-brand-orange rounded-full"
+                              className="absolute left-0 top-3 bottom-3 w-px bg-brand-orange"
                             />
                           )}
 
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between text-[9px] font-mono opacity-30">
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between text-[9px] font-mono text-white/30">
                               <span className="flex items-center gap-2">
                                 #{pull.number}
                                 {pull.draft && (
-                                  <span className="text-[7px] font-mono px-1 border border-white/5 opacity-50 uppercase tracking-widest leading-tight rounded-sm">
+                                  <span className="text-[7px] font-mono px-1.5 py-0.5 border border-white/5 text-white/35 uppercase tracking-[0.22em] leading-tight rounded-md">
                                     Draft
                                   </span>
                                 )}
@@ -1374,7 +1376,7 @@ export default function App() {
 
                             <h3
                               className={cn(
-                                "font-serif italic text-lg leading-tight transition-colors break-words",
+                                "font-serif italic text-base lg:text-lg leading-tight transition-colors break-words",
                                 selectedPull?.id === pull.id
                                   ? "text-white"
                                   : "text-white/60 group-hover:text-white",
@@ -1383,13 +1385,13 @@ export default function App() {
                               {pull.title}
                             </h3>
 
-                            <div className="flex items-center gap-2 pt-1">
+                            <div className="flex items-center gap-2 pt-0.5">
                               <img
                                 src={pull.user.avatar_url}
                                 alt=""
                                 className="w-4 h-4 grayscale opacity-30 group-hover:opacity-100 transition-opacity rounded-full"
                               />
-                              <span className="text-[9px] tracking-widest opacity-20 group-hover:opacity-60 transition-opacity font-bold uppercase">
+                              <span className="text-[9px] tracking-[0.22em] text-white/20 group-hover:text-white/50 transition-colors font-bold uppercase">
                                 {pull.user.login}
                               </span>
                             </div>
@@ -1404,26 +1406,26 @@ export default function App() {
                             setIsSidebarOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left p-6 lg:p-8 transition-all hover:bg-white/[0.02] relative group rounded-2xl",
+                            "w-full text-left p-5 lg:p-6 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
                             selectedBranch?.name === branch.name
-                              ? "bg-white/[0.03]"
+                              ? "bg-white/[0.03] border-white/6"
                               : "",
                           )}
                         >
                           {selectedBranch?.name === branch.name && (
                             <motion.div
                               layoutId="active-indicator"
-                              className="absolute left-2 top-4 bottom-4 w-1 bg-brand-orange rounded-full"
+                              className="absolute left-0 top-3 bottom-3 w-px bg-brand-orange"
                             />
                           )}
 
-                          <div className="space-y-3 lg:space-y-4">
-                            <div className="flex items-center justify-between text-[10px] font-mono opacity-40">
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between text-[10px] font-mono text-white/35">
                               <span className="flex items-center gap-2">
                                 <GitBranch className="w-3 h-3" />
                               </span>
                               {branch.name === repoInfo?.default_branch && (
-                                <span className="text-[8px] font-bold uppercase tracking-widest text-[#00FF41]/60 px-1.5 py-0.5 border border-[#00FF41]/20 rounded-sm">
+                                <span className="text-[8px] font-bold uppercase tracking-[0.22em] text-[#00FF41]/55 px-1.5 py-0.5 border border-[#00FF41]/10 rounded-md">
                                   Default
                                 </span>
                               )}
@@ -1431,7 +1433,7 @@ export default function App() {
 
                             <h3
                               className={cn(
-                                "font-serif italic text-lg lg:text-xl leading-tight transition-colors break-words",
+                                "font-serif italic text-base lg:text-lg leading-tight transition-colors break-words",
                                 selectedBranch?.name === branch.name
                                   ? "text-white"
                                   : "text-white/60 group-hover:text-white",
@@ -1440,8 +1442,8 @@ export default function App() {
                               {branch.name}
                             </h3>
 
-                            <div className="flex items-center gap-3 pt-1 lg:pt-2">
-                              <span className="text-[9px] lg:text-[10px] opacity-40 font-mono truncate">
+                            <div className="flex items-center gap-3 pt-0.5">
+                              <span className="text-[9px] lg:text-[10px] text-white/35 font-mono truncate">
                                 {branch.commit.sha.substring(0, 7)}
                               </span>
                             </div>
@@ -1450,7 +1452,7 @@ export default function App() {
                       ))}
 
                   {hasMore && (
-                    <div className="p-8 flex justify-center">
+                    <div className="p-6 flex justify-center">
                       <button
                         onClick={loadMore}
                         disabled={loadingMore}
@@ -1458,7 +1460,7 @@ export default function App() {
                       >
                         <div
                           className={cn(
-                            "w-10 h-10 border border-white/10 flex items-center justify-center transition-all group-hover:border-brand-orange group-hover:bg-brand-orange/5 rounded-xl",
+                            "w-10 h-10 border border-white/10 flex items-center justify-center transition-all group-hover:border-white/20 group-hover:bg-white/[0.03] rounded-xl",
                             loadingMore && "animate-pulse",
                           )}
                         >
@@ -1484,16 +1486,32 @@ export default function App() {
         <div
           onMouseDown={() => setIsResizing(true)}
           className={cn(
-            "hidden lg:block w-3 h-full -ml-1.5 hover:bg-brand-orange/10 cursor-col-resize transition-all z-50 group flex-shrink-0 relative",
-            isResizing && "bg-brand-orange/20 w-1",
-            isSidebarHidden && "w-4 -ml-2 opacity-50 hover:opacity-100"
+            "hidden lg:block w-8 h-full cursor-col-resize transition-all z-50 group flex-shrink-0 relative",
+            isResizing && "bg-white/[0.03]",
+            isSidebarHidden && "w-10 opacity-80"
           )}
         >
-          <div className={cn(
-            "absolute left-1/2 -translate-x-1/2 w-px h-full bg-white/5 group-hover:bg-brand-orange transition-colors",
-            isResizing && "bg-brand-orange w-0.5",
-            isSidebarHidden && "bg-white/10 group-hover:bg-brand-orange"
-          )} />
+          <div
+            className={cn(
+              "absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-px bg-white/5 group-hover:bg-white/15 transition-colors",
+              isResizing && "bg-brand-orange/60",
+            )}
+          />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSidebarHidden(!isSidebarHidden);
+            }}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7 h-14 rounded-full border border-white/10 bg-panel/95 backdrop-blur-sm flex items-center justify-center text-white/30 hover:text-white/70 hover:border-white/20 transition-all"
+            title={isSidebarHidden ? "Show panel" : "Hide panel"}
+          >
+            <ChevronRight
+              className={cn(
+                "w-3.5 h-3.5 transition-transform",
+                isSidebarHidden ? "rotate-0" : "rotate-180",
+              )}
+            />
+          </button>
         </div>
 
         {/* Diff Content View */}
@@ -2160,12 +2178,12 @@ export default function App() {
                       exit={{ opacity: 0 }}
                       className="fixed inset-0 z-50 flex items-center justify-center p-4 lg:p-12 pointer-events-none"
                     >
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="w-full max-w-4xl max-h-[85vh] bg-panel border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
-                      >
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                      className="w-full max-w-4xl max-h-[85vh] bg-panel border border-white/10 rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl flex flex-col pointer-events-auto"
+                    >
                         {(() => {
                           const run = checkRuns.find(r => r.id === selectedRunId);
                           if (!run) return null;
@@ -2173,11 +2191,11 @@ export default function App() {
                           return (
                             <>
                               {/* Header */}
-                              <div className="p-8 border-b border-white/5 flex items-center justify-between">
-                                <div className="flex items-center gap-6">
+                              <div className="p-5 sm:p-6 lg:p-8 border-b border-white/5 flex items-start justify-between gap-4">
+                                <div className="flex items-center gap-4 min-w-0">
                                   <div className="flex flex-col">
                                     <div className="flex items-center gap-4">
-                                      <h2 className="text-sm font-medium uppercase tracking-[0.2em] text-white/50">
+                                      <h2 className="text-xs sm:text-sm font-medium uppercase tracking-[0.2em] text-white/50 break-words">
                                         {run.name}
                                       </h2>
                                       <div className={cn(
@@ -2198,9 +2216,9 @@ export default function App() {
                               </div>
 
                               {/* Content */}
-                              <div className="flex-1 overflow-y-auto p-8 lg:p-12 space-y-16 custom-scrollbar">
+                              <div className="flex-1 overflow-y-auto p-5 sm:p-6 lg:p-12 space-y-10 lg:space-y-16 custom-scrollbar">
                                 {/* Summary Section */}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-12 border-b border-white/5 pb-12">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-12 border-b border-white/5 pb-8 lg:pb-12">
                                   <div className="space-y-2">
                                     <span className="text-[8px] uppercase tracking-[0.2em] font-medium text-white/20">Status</span>
                                     <div className="flex items-center gap-3">
@@ -2239,7 +2257,7 @@ export default function App() {
                                   </div>
 
                                   <div className="relative">
-                                    <div className="flex flex-wrap items-center gap-12 py-8 justify-center lg:justify-start">
+                                    <div className="flex flex-wrap items-center gap-6 lg:gap-12 py-6 lg:py-8 justify-center lg:justify-start">
                                       {loadingRunDetail ? (
                                         <div className="flex-1 flex items-center justify-center opacity-10">
                                           <RefreshCw className="w-3 h-3 animate-spin mr-3" />
@@ -2287,19 +2305,19 @@ export default function App() {
                                 {/* Detailed Info */}
                                 <div className="space-y-16">
                                   {/* Metadata Grid */}
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
                                     <div className="space-y-4">
                                       <div className="flex items-center gap-2 text-white/10">
                                         <span className="text-[8px] uppercase tracking-widest font-medium">Specifications</span>
                                       </div>
                                       <div className="space-y-3">
-                                        <div className="flex justify-between text-[11px]">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between text-[11px]">
                                           <span className="text-white/20">ID</span>
-                                          <span className="font-mono text-white/40">{run.id}</span>
+                                          <span className="font-mono text-white/40 break-all sm:text-right">{run.id}</span>
                                         </div>
-                                        <div className="flex justify-between text-[11px]">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between text-[11px]">
                                           <span className="text-white/20">Branch</span>
-                                          <span className="font-mono text-white/40">{run.check_suite?.head_branch || "n/a"}</span>
+                                          <span className="font-mono text-white/40 break-all sm:text-right">{run.check_suite?.head_branch || "n/a"}</span>
                                         </div>
                                       </div>
                                     </div>
@@ -2308,17 +2326,17 @@ export default function App() {
                                         <span className="text-[8px] uppercase tracking-widest font-medium">Metrics</span>
                                       </div>
                                       <div className="space-y-3">
-                                        <div className="flex justify-between text-[11px]">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between text-[11px]">
                                           <span className="text-white/20">Duration</span>
-                                          <span className="font-mono text-white/40">
+                                          <span className="font-mono text-white/40 sm:text-right">
                                             {run.started_at && run.completed_at
                                               ? `${Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 60000)}m ${Math.round(((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) % 60000) / 1000)}s`
                                               : "Ongoing"}
                                           </span>
                                         </div>
-                                        <div className="flex justify-between text-[11px]">
+                                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between text-[11px]">
                                           <span className="text-white/20">Latency</span>
-                                          <span className="font-mono text-white/40">{run.started_at ? new Date(run.started_at).toLocaleTimeString() : "n/a"}</span>
+                                          <span className="font-mono text-white/40 sm:text-right">{run.started_at ? new Date(run.started_at).toLocaleTimeString() : "n/a"}</span>
                                         </div>
                                       </div>
                                     </div>
@@ -2334,16 +2352,16 @@ export default function App() {
                                       </div>
                                       <div className="space-y-4">
                                         {selectedRunDetail.annotations.map((ann, idx) => (
-                                          <div key={idx} className="p-6 bg-rose-500/[0.02] border border-rose-500/10 rounded-2xl space-y-3">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-4">
+                                          <div key={idx} className="p-4 sm:p-5 lg:p-6 bg-rose-500/[0.02] border border-rose-500/10 rounded-2xl space-y-3 min-w-0">
+                                            <div className="flex items-start justify-between gap-3 min-w-0">
+                                              <div className="flex items-start gap-3 min-w-0">
                                                 {getFileIcon(ann.path)}
-                                                <span className="text-[10px] font-mono text-white/40 underline decoration-white/5 underline-offset-4">{ann.path}:{ann.start_line}</span>
+                                                <span className="text-[10px] font-mono text-white/40 underline decoration-white/5 underline-offset-4 break-all min-w-0">{ann.path}:{ann.start_line}</span>
                                               </div>
                                             </div>
-                                            <p className="text-xs text-white/80 font-mono leading-relaxed">{ann.message}</p>
+                                            <p className="text-xs text-white/80 font-mono leading-relaxed break-words overflow-hidden">{ann.message}</p>
                                             {ann.raw_details && (
-                                              <pre className="p-4 bg-black/40 rounded-lg text-[9px] font-mono text-white/40 overflow-x-auto">
+                                              <pre className="p-3 sm:p-4 bg-black/40 rounded-lg text-[9px] font-mono text-white/40 overflow-x-auto whitespace-pre-wrap break-words">
                                                 {ann.raw_details}
                                               </pre>
                                             )}
@@ -2354,7 +2372,7 @@ export default function App() {
                                   )}
 
                                   {/* Section Toggles */}
-                                  <div className="flex items-center gap-12 border-b border-white/5 pb-2 self-start">
+                                  <div className="flex items-center gap-6 sm:gap-12 border-b border-white/5 pb-2 self-start">
                                     <button
                                       onClick={() => setCheckDetailTab("steps")}
                                       className={cn(
@@ -2383,8 +2401,8 @@ export default function App() {
 
                                   {checkDetailTab === "steps" ? (
                                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
+                                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-center gap-3 min-w-0">
                                           <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Steps</h3>
                                           {(selectedRunDetail?.status === "in_progress" || selectedRunDetail?.status === "queued") && (
                                             <div className="flex items-center gap-2 px-1.5 py-0.5 bg-amber-500/5 border border-amber-500/10 rounded-sm">
@@ -2400,7 +2418,7 @@ export default function App() {
                                         )}
                                       </div>
 
-                                      <div className="space-y-4">
+                                      <div className="space-y-4 min-w-0">
                                         {errorRunDetail && (
                                           <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl mb-4 flex items-center gap-3">
                                             <AlertCircle className="w-4 h-4 text-rose-500" />
@@ -2420,15 +2438,15 @@ export default function App() {
                                             <p className="text-[8px] uppercase tracking-widest font-medium">Fetching details...</p>
                                           </div>
                                         ) : (selectedRunDetail?.steps && selectedRunDetail.steps.length > 0) ? (
-                                          <div className="space-y-6">
+                                          <div className="space-y-4 sm:space-y-6">
                                             {selectedRunDetail.steps.map((step, idx) => (
                                               <div
                                                 key={step.number || idx}
                                                 className="group animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                                                 style={{ animationDelay: `${idx * 40}ms` }}
                                               >
-                                                <div className="flex items-center justify-between py-1 cursor-default border-l border-white/5 pl-8 group-hover:border-white/20 transition-all">
-                                                  <div className="flex items-center gap-6">
+                                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between py-1 cursor-default border-l border-white/5 pl-5 sm:pl-8 group-hover:border-white/20 transition-all min-w-0">
+                                                  <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                                                     <div className={cn(
                                                       "w-1 h-1 rounded-full",
                                                       step.conclusion === "success" ? "bg-emerald-500/40" :
@@ -2436,11 +2454,11 @@ export default function App() {
                                                       step.status === "in_progress" ? "bg-amber-500 animate-pulse" :
                                                       "bg-white/10"
                                                     )} />
-                                                    <div className="space-y-0.5">
-                                                      <span className="text-[11px] font-medium text-white/60 group-hover:text-white/80 transition-colors">{step.name}</span>
+                                                    <div className="space-y-0.5 min-w-0">
+                                                      <span className="text-[11px] font-medium text-white/60 group-hover:text-white/80 transition-colors break-words">{step.name}</span>
                                                     </div>
                                                   </div>
-                                                  <div className="flex items-center gap-8">
+                                                  <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8">
                                                     <span className="text-[8px] font-mono text-white/10 uppercase tracking-[0.2em]">{step.conclusion || step.status}</span>
                                                     {step.started_at && step.completed_at && (
                                                       <span className="text-[9px] font-mono text-white/20 min-w-[40px] text-right">
@@ -2489,8 +2507,8 @@ export default function App() {
                                     </div>
                                   ) : (
                                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
+                                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-center gap-3 min-w-0">
                                           <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Logs</h3>
                                           {(selectedRunDetail?.status === "in_progress" || selectedRunDetail?.status === "queued") && (
                                             <div className="flex items-center gap-2 px-1.5 py-0.5 bg-brand-orange/5 border border-brand-orange/10 rounded-sm">
@@ -2506,8 +2524,8 @@ export default function App() {
                                         )}
                                       </div>
 
-                                      <div className="bg-transparent border-l border-white/5 relative group">
-                                        <div className="absolute top-4 right-4 z-10 flex gap-2">
+                                      <div className="bg-transparent border-l border-white/5 relative group min-w-0">
+                                        <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 flex gap-2 max-w-[calc(100%-1.5rem)]">
                                           {loadingLogs && (
                                             <div className="px-2 py-1 border border-white/5 rounded flex items-center gap-2">
                                               <RefreshCw className="w-2.5 h-2.5 animate-spin text-white/10" />
@@ -2516,7 +2534,7 @@ export default function App() {
                                           )}
                                         </div>
                                         <div className="flex flex-col">
-                                          <div className="p-8 font-mono text-[11px] leading-relaxed text-white/30 overflow-x-auto whitespace-pre overflow-y-auto custom-scrollbar min-h-[400px] max-h-[700px]">
+                                          <div className="p-4 sm:p-6 lg:p-8 font-mono text-[11px] leading-relaxed text-white/30 overflow-x-auto whitespace-pre-wrap break-words overflow-y-auto custom-scrollbar min-h-[320px] sm:min-h-[400px] max-h-[700px] min-w-0">
                                             {runLogs ? (
                                               runLogs
                                             ) : loadingLogs ? (
@@ -2599,12 +2617,12 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-onyx border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+              className="relative w-full max-w-2xl bg-panel border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
             >
               {/* Modal Header */}
-              <div className="p-8 pb-4 flex items-center justify-between">
+              <div className="px-5 py-4 sm:px-6 lg:px-8 lg:py-5 flex items-center justify-between border-b border-white/5">
                 <div className="flex items-center gap-4">
-                  <h2 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Evolution</h2>
+                  <h2 className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/30">Evolution</h2>
                 </div>
                 <button
                   onClick={() => setShowUpdates(false)}
@@ -2615,55 +2633,120 @@ export default function App() {
               </div>
 
               {/* Modal Content */}
-              <div className="flex-1 overflow-y-auto p-8 space-y-12 custom-scrollbar">
-                {APP_UPDATES.map((update, idx) => (
-                  <div key={update.version} className="relative pl-10 group">
-                    {/* Connector line */}
-                    {idx !== APP_UPDATES.length - 1 && (
-                      <div className="absolute left-[15px] top-8 bottom-0 w-px bg-white/5" />
-                    )}
-
-                    {/* Version Indicator */}
-                    <div className="absolute left-0 top-2 w-4 h-4 flex items-center justify-center z-10">
-                      <div className="w-1 h-1 rounded-full bg-white/10 group-hover:bg-brand-orange/40 transition-colors" />
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs font-medium text-white/60 group-hover:text-white/80 transition-colors">
-                            {update.title}
-                          </span>
-                          {update.category === "planned" && (
-                            <span className="text-[7px] uppercase tracking-widest px-1 py-0.5 border border-white/5 text-white/20 rounded">
-                              Planned
+              <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6 lg:px-8 lg:py-6 space-y-8 custom-scrollbar">
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] uppercase tracking-[0.28em] font-medium text-white/20">
+                      Released
+                    </span>
+                    <span className="text-[9px] font-mono text-white/10">
+                      {releasedUpdates.length} entries
+                    </span>
+                  </div>
+                  <div className="border border-white/5 rounded-2xl overflow-hidden bg-black/10">
+                    {releasedUpdates.map((update, idx) => (
+                      <div
+                        key={update.version}
+                        className={cn(
+                          "px-4 py-4 sm:px-5 sm:py-5 space-y-3",
+                          idx !== releasedUpdates.length - 1 && "border-b border-white/5",
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] font-mono text-white/20">
+                                {update.version}
+                              </span>
+                              <span className="w-1 h-1 rounded-full bg-white/10" />
+                              <span className="text-sm font-medium text-white/70">
+                                {update.title}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-white/30 leading-relaxed">
+                              {update.description}
+                            </p>
+                          </div>
+                          {update.date && (
+                            <span className="text-[9px] font-mono text-white/10 shrink-0 pt-0.5">
+                              {update.date}
                             </span>
                           )}
                         </div>
-                        <span className="text-[9px] font-mono text-white/10">{update.date}</span>
-                      </div>
 
-                      <p className="text-[11px] text-white/30 leading-relaxed">{update.description}</p>
-
-                      <div className="grid grid-cols-1 gap-1">
-                        {update.details.map((detail, dIdx) => (
-                          <div key={dIdx} className="flex items-start gap-4 py-0.5">
-                            <div className="mt-1.5 w-0.5 h-0.5 bg-white/10 rounded-full shrink-0" />
-                            <span className="text-[10px] text-white/40 leading-relaxed">{detail}</span>
-                          </div>
-                        ))}
+                        <div className="grid grid-cols-1 gap-1.5">
+                          {update.details.map((detail, dIdx) => (
+                            <div key={dIdx} className="flex items-start gap-3">
+                              <div className="mt-1.5 w-1 h-px bg-white/10 shrink-0" />
+                              <span className="text-[10px] text-white/40 leading-relaxed">
+                                {detail}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                </section>
+
+                {plannedUpdates.length > 0 && (
+                  <section className="space-y-3">
+                    <span className="text-[9px] uppercase tracking-[0.28em] font-medium text-white/15">
+                      Planned
+                    </span>
+                    <div className="border border-white/5 rounded-2xl overflow-hidden bg-transparent">
+                      {plannedUpdates.map((update, idx) => (
+                        <div
+                          key={update.version}
+                          className={cn(
+                            "px-4 py-4 sm:px-5 sm:py-5 space-y-3 opacity-80",
+                            idx !== plannedUpdates.length - 1 && "border-b border-white/5",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-mono text-white/15">
+                                  {update.version}
+                                </span>
+                                <span className="text-[7px] uppercase tracking-[0.24em] px-1.5 py-0.5 border border-white/5 text-white/20 rounded-md">
+                                  Planned
+                                </span>
+                              </div>
+                              <span className="text-sm font-medium text-white/50">
+                                {update.title}
+                              </span>
+                              <p className="text-[11px] text-white/25 leading-relaxed">
+                                {update.description}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-1.5">
+                            {update.details.map((detail, dIdx) => (
+                              <div key={dIdx} className="flex items-start gap-3">
+                                <div className="mt-1.5 w-1 h-px bg-white/8 shrink-0" />
+                                <span className="text-[10px] text-white/32 leading-relaxed">
+                                  {detail}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
 
               {/* Modal Footer */}
-              <div className="p-6 bg-white/[0.02] border-t border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                  <span className="text-[9px] uppercase tracking-widest font-medium text-emerald-500/40">Production</span>
-                </div>
+              <div className="px-5 py-4 sm:px-6 lg:px-8 border-t border-white/5 flex items-center justify-between bg-black/10">
+                <span className="text-[9px] uppercase tracking-[0.24em] font-medium text-white/15">
+                  Local changelog
+                </span>
+                <span className="text-[9px] font-mono text-white/10">
+                  {releasedUpdates[0]?.date ?? "draft"}
+                </span>
               </div>
             </motion.div>
           </div>
