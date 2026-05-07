@@ -10,7 +10,7 @@ export interface AppUpdate {
 export const APP_UPDATES: AppUpdate[] = [
   {
     version: "0.2.1",
-    date: "2026-05-08",
+    date: "2026-05-07",
     title: "History, Checks & Navigation Refinements",
     description: "Corrected timeline behavior, check surfaces, and diff navigation feedback.",
     category: "fix",
@@ -25,7 +25,7 @@ export const APP_UPDATES: AppUpdate[] = [
   },
   {
     version: "0.2.0",
-    date: "2026-05-08",
+    date: "2026-05-07",
     title: "Review API & CI Surfaces",
     description: "Expanded review data, checks, timeline views, and rendering fixes.",
     category: "feature",
@@ -50,7 +50,7 @@ export const APP_UPDATES: AppUpdate[] = [
   },
   {
     version: "0.1.1",
-    date: "2026-05-06",
+    date: "2026-05-07",
     title: "Checks, Navigation & App Flow",
     description: "Added repo flow improvements and deeper GitHub integration.",
     category: "feature",

@@ -2300,7 +2300,7 @@ export default function App() {
                     <button
                       onClick={() => setActiveTab("diff")}
                       className={cn(
-                        "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group",
+                        "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group text-center whitespace-nowrap",
                         activeTab === "diff"
                           ? "text-brand-orange"
                           : "text-white/20 hover:text-white/40",
@@ -2318,15 +2318,15 @@ export default function App() {
                       <button
                         onClick={() => setActiveTab("discussion")}
                         className={cn(
-                          "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center gap-2",
+                          "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
                           activeTab === "discussion"
                             ? "text-brand-orange"
                             : "text-white/20 hover:text-white/40",
                         )}
-                      >
+                        >
                         Review
                         {comments.length + reviewComments.length > 0 && (
-                          <span className="text-brand-orange/60 text-[8px] font-mono opacity-80">
+                          <span className="text-brand-orange/60 text-[7px] sm:text-[8px] font-mono opacity-80">
                             ({comments.length + reviewComments.length})
                           </span>
                         )}
@@ -2342,14 +2342,14 @@ export default function App() {
                       <button
                         onClick={() => setActiveTab("checks")}
                         className={cn(
-                          "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center gap-2",
+                          "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
                           activeTab === "checks"
                             ? "text-brand-orange"
                             : "text-white/20 hover:text-white/40",
                         )}
                       >
                         Checks
-                        <span className="text-brand-orange/60 text-[8px] font-mono opacity-80">
+                        <span className="text-brand-orange/60 text-[7px] sm:text-[8px] font-mono opacity-80">
                           ({checkRuns.length})
                         </span>
                         {activeTab === "checks" && (
@@ -2363,7 +2363,7 @@ export default function App() {
                     <button
                       onClick={() => setActiveTab("timeline")}
                       className={cn(
-                        "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center gap-2",
+                        "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
                         activeTab === "timeline"
                           ? "text-brand-orange"
                           : "text-white/20 hover:text-white/40",
@@ -3302,10 +3302,10 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-panel border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+              className="relative w-full max-w-2xl bg-panel border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[84vh]"
             >
               {/* Modal Header */}
-              <div className="px-5 py-4 sm:px-6 lg:px-8 lg:py-5 flex items-center justify-between border-b border-white/5">
+              <div className="px-4 py-3 sm:px-6 lg:px-8 lg:py-5 flex items-center justify-between border-b border-white/5">
                 <div className="flex items-center gap-4">
                   <h2 className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/30">Updates</h2>
                 </div>
@@ -3318,8 +3318,8 @@ export default function App() {
               </div>
 
               {/* Modal Content */}
-              <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6 lg:px-8 lg:py-6 space-y-8 custom-scrollbar">
-                <section className="space-y-3">
+              <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 lg:px-8 lg:py-6 space-y-6 custom-scrollbar">
+                <section className="space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[9px] uppercase tracking-[0.28em] font-medium text-white/20">
                       Released
@@ -3328,23 +3328,23 @@ export default function App() {
                       {releasedUpdates.length} entries
                     </span>
                   </div>
-                  <div className="border border-white/5 rounded-2xl overflow-hidden bg-black/10">
+                  <div className="border-t border-white/5">
                     {releasedUpdates.map((update, idx) => (
                       <div
                         key={update.version}
                         className={cn(
-                          "px-4 py-4 sm:px-5 sm:py-5 space-y-3",
+                          "py-4 sm:py-5 space-y-2.5",
                           idx !== releasedUpdates.length - 1 && "border-b border-white/5",
                         )}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 space-y-1">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5">
                               <span className="text-[10px] font-mono text-white/20">
                                 {update.version}
                               </span>
                               <span className="w-1 h-1 rounded-full bg-white/10" />
-                              <span className="text-sm font-medium text-white/70">
+                              <span className="text-[15px] sm:text-sm font-medium text-white/70 leading-tight">
                                 {update.title}
                               </span>
                             </div>
@@ -3386,11 +3386,11 @@ export default function App() {
                           className={cn(
                             "px-4 py-4 sm:px-5 sm:py-5 space-y-3 opacity-80",
                             idx !== plannedUpdates.length - 1 && "border-b border-white/5",
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex items-center gap-3">
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2.5">
                                 <span className="text-[10px] font-mono text-white/15">
                                   {update.version}
                                 </span>
@@ -3398,7 +3398,7 @@ export default function App() {
                                   Planned
                                 </span>
                               </div>
-                              <span className="text-sm font-medium text-white/50">
+                              <span className="text-[15px] sm:text-sm font-medium text-white/50 leading-tight">
                                 {update.title}
                               </span>
                               <p className="text-[11px] text-white/25 leading-relaxed">
@@ -3425,7 +3425,7 @@ export default function App() {
               </div>
 
               {/* Modal Footer */}
-              <div className="px-5 py-4 sm:px-6 lg:px-8 border-t border-white/5 flex items-center justify-between bg-black/10">
+              <div className="px-4 py-3 sm:px-6 lg:px-8 border-t border-white/5 flex items-center justify-between bg-black/5">
                 <span className="text-[9px] uppercase tracking-[0.24em] font-medium text-white/15">
                   Local changelog
                 </span>
