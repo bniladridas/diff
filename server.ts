@@ -133,6 +133,49 @@ async function startServer() {
     }
   });
 
+  app.get("/api/pulls/:number/edits", async (req, res) => {
+    try {
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const response = await axios.post(
+        "https://api.github.com/graphql",
+        {
+          query: `
+            query PullRequestEdits($owner: String!, $repo: String!, $number: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $number) {
+                  userContentEdits(first: 100) {
+                    nodes {
+                      editedAt
+                      deletedAt
+                      diff
+                      editor {
+                        login
+                        avatarUrl
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          `,
+          variables: {
+            owner,
+            repo,
+            number: Number(number),
+          },
+        },
+        { headers: getHeaders("application/vnd.github+json") },
+      );
+
+      res.json(
+        response.data.data?.repository?.pullRequest?.userContentEdits?.nodes || [],
+      );
+    } catch (error: any) {
+      handleError(res, error, "Edits");
+    }
+  });
+
   app.get("/api/pulls/:number/commits", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
@@ -159,6 +202,8 @@ async function startServer() {
 
       const headSha = prResponse.data.head.sha;
       const mergeSha = prResponse.data.merge_commit_sha;
+      const mergeable = prResponse.data.mergeable;
+      const mergeStateStatus = prResponse.data.mergeable_state;
 
       // Fetch checks for a specific SHA
       const fetchForSha = async (sha: string) => {
@@ -190,15 +235,29 @@ async function startServer() {
         })()
       ]);
 
-      // Deduplicate by name/context
-      const uniqueChecks = new Map();
+      // Keep distinct runs, but collapse duplicate skipped reruns for the same name.
+      const groupedChecks = new Map<string, any[]>();
       const uniqueStatuses = new Map();
 
-      // Process merge commit first as it often represents the final "truth" for PRs
       [...mergeData.checks, ...headData.checks].forEach((c: any) => {
-        if (!uniqueChecks.has(c.name)) {
-          uniqueChecks.set(c.name, { ...c, type: "check_run" });
+        const existing = groupedChecks.get(c.name) || [];
+        existing.push({ ...c, type: "check_run" });
+        groupedChecks.set(c.name, existing);
+      });
+
+      const normalizedChecks = Array.from(groupedChecks.values()).flatMap((runs) => {
+        if (runs.every((run) => run.conclusion === "skipped")) {
+          const latestSkipped = runs
+            .slice()
+            .sort((a, b) => {
+              const aTime = new Date(a.completed_at || a.started_at || 0).getTime();
+              const bTime = new Date(b.completed_at || b.started_at || 0).getTime();
+              return bTime - aTime;
+            })[0];
+          return latestSkipped ? [latestSkipped] : [];
         }
+
+        return runs;
       });
 
       [...mergeData.statuses, ...headData.statuses].forEach((s: any) => {
@@ -219,11 +278,15 @@ async function startServer() {
       });
 
       const allChecks = [
-        ...Array.from(uniqueChecks.values()),
+        ...normalizedChecks,
         ...Array.from(uniqueStatuses.values())
       ];
 
-      res.json({ check_runs: allChecks });
+      res.json({
+        check_runs: allChecks,
+        mergeable,
+        merge_state_status: mergeStateStatus,
+      });
     } catch (error: any) {
       handleError(res, error, "Checks");
     }

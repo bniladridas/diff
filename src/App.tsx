@@ -155,6 +155,7 @@ interface GithubTimelineEvent {
   id?: number;
   event: string;
   created_at: string;
+  updated_at?: string;
   actor?: {
     login: string;
     avatar_url: string;
@@ -194,13 +195,36 @@ interface GithubTimelineEvent {
       };
     };
   };
+  changes?: {
+    title?: {
+      from?: string;
+    };
+    body?: {
+      from?: string;
+    };
+    base?: {
+      ref?: {
+        from?: string;
+      };
+    };
+  };
+}
+
+interface GithubContentEdit {
+  editedAt: string;
+  deletedAt?: string | null;
+  diff?: string | null;
+  editor?: {
+    login: string;
+    avatarUrl: string;
+  } | null;
 }
 
 type TimelineEvent =
-  | { type: 'pr_created'; date: string; data: PullRequest }
   | { type: 'commit'; date: string; data: GithubCommit }
   | { type: 'comment'; date: string; data: GithubComment }
-  | { type: 'timeline'; date: string; data: GithubTimelineEvent };
+  | { type: 'timeline'; date: string; data: GithubTimelineEvent }
+  | { type: 'content_edit'; date: string; data: GithubContentEdit };
 
 interface Branch {
   name: string;
@@ -434,6 +458,17 @@ interface CheckRun {
   suite_runs?: CheckRun[];
 }
 
+interface CheckSummary {
+  mergeable?: boolean | null;
+  merge_state_status?: string | null;
+}
+
+interface DiffHighlightTarget {
+  path: string;
+  startLine: number;
+  endLine: number;
+}
+
 const getFileIcon = (path: string) => {
   if (!path) return <FileCode className="w-2.5 h-2.5 text-white/20" />;
   const normalizedPath = path.toLowerCase();
@@ -649,7 +684,9 @@ export default function App() {
   const [commits, setCommits] = useState<GithubCommit[]>([]);
   const [reviews, setReviews] = useState<GithubReview[]>([]);
   const [timelineEvents, setTimelineEvents] = useState<GithubTimelineEvent[]>([]);
+  const [contentEdits, setContentEdits] = useState<GithubContentEdit[]>([]);
   const [checkRuns, setCheckRuns] = useState<CheckRun[]>([]);
+  const [checkSummary, setCheckSummary] = useState<CheckSummary | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [selectedRunDetail, setSelectedRunDetail] = useState<CheckRun | null>(null);
   const [loadingRunDetail, setLoadingRunDetail] = useState(false);
@@ -657,13 +694,14 @@ export default function App() {
   const [runLogs, setRunLogs] = useState<string | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [checkDetailTab, setCheckDetailTab] = useState<"steps" | "logs">("steps");
-  const [activeTab, setActiveTab] = useState<"diff" | "discussion" | "timeline">("diff");
+  const [activeTab, setActiveTab] = useState<"diff" | "discussion" | "checks" | "timeline">("diff");
   const [loading, setLoading] = useState(true);
   const [showUpdates, setShowUpdates] = useState(false);
   const [hasNewUpdates, setHasNewUpdates] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [loadingComments, setLoadingComments] = useState(false);
+  const [highlightedDiffTarget, setHighlightedDiffTarget] = useState<DiffHighlightTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(400);
@@ -686,25 +724,64 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
+  const diffHighlightTimeoutRef = useRef<number | null>(null);
   const diffRows = parseDiffRows(selectedFile?.patch);
   const releasedUpdates = APP_UPDATES.filter((update) => update.category !== "planned");
   const plannedUpdates = APP_UPDATES.filter((update) => update.category === "planned");
+  const checkStats = checkRuns.reduce(
+    (acc, run) => {
+      if (run.status !== "completed") acc.pending++;
+      else if (run.conclusion === "success") acc.success++;
+      else if (
+        run.conclusion === "failure" ||
+        run.conclusion === "timed_out" ||
+        run.conclusion === "action_required" ||
+        run.conclusion === "startup_failure" ||
+        run.conclusion === "stale"
+      ) acc.failure++;
+      else if (run.conclusion === "cancelled") acc.cancelled++;
+      else if (run.conclusion === "skipped") acc.skipped++;
+      else acc.other++;
+      return acc;
+    },
+    { success: 0, failure: 0, pending: 0, cancelled: 0, skipped: 0, other: 0 },
+  );
 
-  const navigateToComment = (path: string, line: number) => {
+  const navigateToComment = (path: string, line: number, startLine?: number) => {
     setActiveTab("diff");
     const file = files.find(f => f.filename === path);
     if (file) {
       setSelectedFile(file);
       // Wait for React to render the diff before scrolling
       setTimeout(() => {
-        const id = `line-${path}-${line}`;
+        const rangeStart = startLine ?? line;
+        const rangeEnd = line;
+        const id = `line-${path}-${rangeStart}`;
         const element = document.getElementById(id);
         if (element) {
           element.scrollIntoView({ behavior: "smooth", block: "center" });
-          element.classList.add("bg-brand-orange/20");
-          setTimeout(() => {
-            element.classList.remove("bg-brand-orange/20");
-          }, 2000);
+          setHighlightedDiffTarget({
+            path,
+            startLine: Math.min(rangeStart, rangeEnd),
+            endLine: Math.max(rangeStart, rangeEnd),
+          });
+          if (diffHighlightTimeoutRef.current) {
+            window.clearTimeout(diffHighlightTimeoutRef.current);
+          }
+          diffHighlightTimeoutRef.current = window.setTimeout(() => {
+            setHighlightedDiffTarget((current) => {
+              if (
+                current &&
+                current.path === path &&
+                current.startLine === Math.min(rangeStart, rangeEnd) &&
+                current.endLine === Math.max(rangeStart, rangeEnd)
+              ) {
+                return null;
+              }
+              return current;
+            });
+            diffHighlightTimeoutRef.current = null;
+          }, 4000);
         }
       }, 500);
     }
@@ -715,17 +792,21 @@ export default function App() {
   const getTimeline = (): TimelineEvent[] => {
     if (!selectedPull) return [];
 
-    const events: TimelineEvent[] = [
-      { type: 'pr_created', date: selectedPull.created_at, data: selectedPull }
-    ];
+    const events: TimelineEvent[] = [];
 
     commits.forEach(c => events.push({ type: 'commit', date: c.commit.author.date, data: c }));
     comments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
     reviewComments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
+    contentEdits.forEach((edit) => {
+      if (edit.editedAt) {
+        events.push({ type: "content_edit", date: edit.editedAt, data: edit });
+      }
+    });
     timelineEvents
       .filter((event) => event.created_at)
       .filter((event) => {
         if (event.event === "commented") return false;
+        if (event.event === "committed") return false;
         if (event.event === "reviewed" && event.state?.toUpperCase() === "COMMENTED" && !event.body?.trim()) {
           return false;
         }
@@ -737,14 +818,14 @@ export default function App() {
   };
 
   const getTimelineMeta = (event: TimelineEvent) => {
-    if (event.type === "pr_created") {
-      return { label: "Pull Request Opened", labelClass: "text-brand-orange/40", dotClass: "border-brand-orange", icon: <ArrowDown className="w-2.5 h-2.5 text-brand-orange" /> };
-    }
     if (event.type === "commit") {
       return { label: "Commit", labelClass: "text-sky-500/40", dotClass: "border-sky-500/40", icon: <GitCommit className="w-2 h-2 text-sky-500" /> };
     }
     if (event.type === "comment") {
       return { label: "Review Comment", labelClass: "text-white/20", dotClass: "border-white/10", icon: <MessageCircle className="w-2 h-2 text-white/30" /> };
+    }
+    if (event.type === "content_edit") {
+      return { label: "Description updated", labelClass: "text-white/20", dotClass: "border-white/10", icon: <FileText className="w-2 h-2 text-white/30" /> };
     }
 
     const timelineEvent = event.data;
@@ -766,6 +847,8 @@ export default function App() {
         return { label: "Review dismissed", labelClass: "text-rose-500/40", dotClass: "border-rose-500/40", icon: <XCircle className="w-2.5 h-2.5 text-rose-500" /> };
       case "renamed":
         return { label: "Title changed", labelClass: "text-white/20", dotClass: "border-white/10", icon: <History className="w-2 h-2 text-white/30" /> };
+      case "edited":
+        return { label: "Details updated", labelClass: "text-white/20", dotClass: "border-white/10", icon: <FileText className="w-2 h-2 text-white/30" /> };
       case "labeled":
       case "unlabeled":
         return { label: timelineEvent.event === "labeled" ? "Label added" : "Label removed", labelClass: "text-white/20", dotClass: "border-white/10", icon: <Hash className="w-2 h-2 text-white/30" /> };
@@ -786,22 +869,6 @@ export default function App() {
   };
 
   const renderTimelineEventBody = (event: TimelineEvent) => {
-    if (event.type === "pr_created") {
-      return (
-        <div className="space-y-4 border-l border-white/5 pl-6">
-          <div className="flex items-center gap-4">
-            <img src={event.data.user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-white/80">{event.data.user.login} <span className="text-[9px] uppercase tracking-wider text-white/20 ml-2">Opened</span></p>
-            </div>
-          </div>
-          <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
-            <ReactMarkdown>{event.data.body || "No description provided."}</ReactMarkdown>
-          </div>
-        </div>
-      );
-    }
-
     if (event.type === "commit") {
       return (
         <div className="space-y-4 border-l border-white/5 pl-6">
@@ -829,11 +896,13 @@ export default function App() {
             <button
               onClick={() => {
                 const line = event.data.line || event.data.original_line;
+                const startLine = event.data.start_line || event.data.original_start_line;
                 if (event.data.path && line) {
-                  navigateToComment(event.data.path, line);
+                  navigateToComment(event.data.path, line, startLine);
                 }
               }}
-              className="flex items-center justify-between w-full opacity-40 hover:opacity-100 transition-opacity"
+              className="flex items-center justify-between w-full opacity-50 hover:opacity-100 transition-opacity group/anchor"
+              title="Open in diff"
             >
               <div className="flex items-center gap-2 overflow-hidden">
                 {getFileIcon(event.data.path)}
@@ -842,10 +911,51 @@ export default function App() {
                   {getFileKindLabel(event.data.path)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[8px] font-mono">Line {event.data.line || event.data.original_line}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-[8px] font-mono">
+                  {formatReviewCommentLine(event.data)}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors group-hover/anchor:text-brand-orange">
+                  Open in Diff
+                  <ArrowRight className="w-2.5 h-2.5" />
+                </span>
               </div>
             </button>
+          )}
+        </div>
+      );
+    }
+
+    if (event.type === "content_edit") {
+      const preview = event.data.diff?.trim();
+      const previewLines = preview ? preview.split("\n").slice(0, 6).join("\n") : "";
+      return (
+        <div className="space-y-4 border-l border-white/5 pl-6">
+          <div className="flex items-center gap-4">
+            {event.data.editor?.avatarUrl ? (
+              <img src={event.data.editor.avatarUrl} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+            ) : (
+              <div className="w-6 h-6 rounded-full border border-white/10 bg-white/[0.02] shrink-0" />
+            )}
+            <p className="text-sm font-medium text-white/80">
+              {event.data.editor?.login || "github"}
+              <span className="text-white/40 font-normal"> updated the pull request description</span>
+            </p>
+          </div>
+          {previewLines ? (
+            <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-4">
+              <div className="mb-3 text-[8px] font-medium uppercase tracking-[0.24em] text-white/18">
+                Previous version
+              </div>
+              <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-white/30 font-mono">
+                {previewLines}
+                {preview && preview.split("\n").length > 6 ? "\n..." : ""}
+              </pre>
+            </div>
+          ) : (
+            <p className="text-[12px] text-white/35 leading-relaxed">
+              Description updated.
+            </p>
           )}
         </div>
       );
@@ -923,6 +1033,49 @@ export default function App() {
             </div>
           </div>
         );
+      case "edited": {
+        const changedFields = [
+          timelineEvent.changes?.body ? "description" : null,
+          timelineEvent.changes?.title ? "title" : null,
+          timelineEvent.changes?.base?.ref ? "base branch" : null,
+        ].filter(Boolean) as string[];
+        const summary =
+          changedFields.length > 0
+            ? changedFields.join(", ")
+            : "pull request details";
+        return (
+          <div className="space-y-4 border-l border-white/5 pl-6">
+            <div className="flex items-center gap-4">
+              <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
+              <p className="text-sm font-medium text-white/80">
+                {actorName}
+                <span className="text-white/40 font-normal"> updated the {summary}</span>
+              </p>
+            </div>
+            {timelineEvent.changes?.title?.from && (
+              <div className="text-[12px] text-white/35 leading-relaxed">
+                <span className="text-white/20">Title:</span>{" "}
+                <span className="text-white/20 line-through">{timelineEvent.changes.title.from}</span>
+                <span className="text-white/10 mx-2">{"->"}</span>
+                <span className="text-white/60">{selectedPull?.title}</span>
+              </div>
+            )}
+            {timelineEvent.changes?.body && (
+              <p className="text-[12px] text-white/35 leading-relaxed">
+                Description updated.
+              </p>
+            )}
+            {timelineEvent.changes?.base?.ref?.from && selectedPull?.base?.ref && (
+              <div className="text-[12px] text-white/35 leading-relaxed">
+                <span className="text-white/20">Base:</span>{" "}
+                <span className="text-white/20 line-through">{timelineEvent.changes.base.ref.from}</span>
+                <span className="text-white/10 mx-2">{"->"}</span>
+                <span className="text-white/60">{selectedPull.base.ref}</span>
+              </div>
+            )}
+          </div>
+        );
+      }
       case "labeled":
       case "unlabeled":
         return (
@@ -1103,13 +1256,6 @@ export default function App() {
     };
   }, [selectedRunId, checkRuns, currentOwner, currentRepo]);
 
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("diff_theme", theme);
@@ -1131,7 +1277,10 @@ export default function App() {
     setReviewComments([]);
     setCommits([]);
     setReviews([]);
+    setTimelineEvents([]);
+    setContentEdits([]);
     setCheckRuns([]);
+    setCheckSummary(null);
     setActiveTab("diff");
     setPage(1);
     setHasMore(true);
@@ -1352,6 +1501,8 @@ export default function App() {
           setComments([]);
           setReviewComments([]);
           setTimelineEvents([]);
+          setContentEdits([]);
+          setCheckSummary(null);
         }
       }
     } catch (err: any) {
@@ -1385,10 +1536,12 @@ export default function App() {
     setComments([]);
     setReviewComments([]);
     setTimelineEvents([]);
+    setContentEdits([]);
     setCheckRuns([]);
+    setCheckSummary(null);
     setActiveTab("diff");
     try {
-      const [filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes, timelineRes] = await Promise.all([
+      const [filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes, timelineRes, editsRes] = await Promise.all([
         fetch(
           `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
         ),
@@ -1410,6 +1563,9 @@ export default function App() {
         fetch(
           `/api/pulls/${pull.number}/timeline?owner=${currentOwner}&repo=${currentRepo}`,
         ),
+        fetch(
+          `/api/pulls/${pull.number}/edits?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
       ]);
 
       if (repoKeyRef.current !== requestKey) return;
@@ -1429,11 +1585,16 @@ export default function App() {
       if (commitsRes.ok) setCommits(await commitsRes.json());
       if (reviewsRes.ok) setReviews(await reviewsRes.json());
       if (timelineRes.ok) setTimelineEvents(await timelineRes.json());
+      if (editsRes.ok) setContentEdits(await editsRes.json());
 
       // Process Checks
       if (checksRes.ok) {
         const data = await checksRes.json();
         setCheckRuns(data.check_runs || []);
+        setCheckSummary({
+          mergeable: data.mergeable,
+          merge_state_status: data.merge_state_status,
+        });
       }
     } catch (err) {
       if (repoKeyRef.current !== requestKey) return;
@@ -2074,32 +2235,20 @@ export default function App() {
                         {selectedPull && checkRuns.length > 0 && (
                           <>
                             <button
-                              onClick={() => {
-                                setActiveTab("discussion");
-                                setTimeout(() => scrollToSection("ci-pipeline"), 100);
-                              }}
+                              onClick={() => setActiveTab("checks")}
                               className="flex items-center gap-2 hover:bg-white/5 p-1 -m-1 transition-all rounded group"
                             >
-                              {(() => {
-                                const stats = checkRuns.reduce(
-                                  (acc, run) => {
-                                    if (run.status !== "completed") acc.pending++;
-                                    else if (run.conclusion === "success") acc.success++;
-                                    else if (run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "action_required" || run.conclusion === "startup_failure" || run.conclusion === "stale") acc.failure++;
-                                    else if (run.conclusion === "cancelled") acc.cancelled++;
-                                    else if (run.conclusion === "skipped") acc.skipped++;
-                                    else acc.other++;
-                                    return acc;
-                                  },
-                                  { success: 0, failure: 0, pending: 0, cancelled: 0, skipped: 0, other: 0 }
-                                );
-
-                                if (stats.failure > 0) return <XCircle className="w-5 h-5 text-rose-500" />;
-                                if (stats.cancelled > 0) return <CircleSlash className="w-5 h-5 text-orange-500" />;
-                                if (stats.pending > 0) return <RefreshCw className="w-5 h-5 text-amber-500 animate-spin" />;
-                                if (stats.success === checkRuns.length - stats.skipped) return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
-                                return <Circle className="w-5 h-5 text-white/20" />;
-                              })()}
+                              {checkStats.failure > 0 ? (
+                                <XCircle className="w-5 h-5 text-rose-500" />
+                              ) : checkStats.cancelled > 0 ? (
+                                <CircleSlash className="w-5 h-5 text-orange-500" />
+                              ) : checkStats.pending > 0 ? (
+                                <RefreshCw className="w-5 h-5 text-amber-500 animate-spin" />
+                              ) : checkStats.success === checkRuns.length - checkStats.skipped ? (
+                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                              ) : (
+                                <Circle className="w-5 h-5 text-white/20" />
+                              )}
 
                               <div className="flex flex-col text-left">
                                 <span className="text-[8px] uppercase tracking-widest opacity-40 font-bold group-hover:opacity-60">Checks</span>
@@ -2110,7 +2259,7 @@ export default function App() {
                                   checkRuns.some(r => r.conclusion === "cancelled") ? "text-orange-500" :
                                   "text-amber-500"
                                 )}>
-                                  {checkRuns.filter(r => r.conclusion === "success").length}/{checkRuns.length} Passed
+                                  {checkStats.success}/{checkRuns.length} Passed
                                 </span>
                             </div>
                           </button>
@@ -2182,6 +2331,28 @@ export default function App() {
                           </span>
                         )}
                         {activeTab === "discussion" && (
+                          <motion.div
+                            layoutId="activeTab"
+                            className="absolute bottom-0 left-0 right-0 h-[1px] bg-brand-orange"
+                          />
+                        )}
+                      </button>
+                    )}
+                    {selectedPull && checkRuns.length > 0 && (
+                      <button
+                        onClick={() => setActiveTab("checks")}
+                        className={cn(
+                          "px-8 py-5 text-[9px] uppercase tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center gap-2",
+                          activeTab === "checks"
+                            ? "text-brand-orange"
+                            : "text-white/20 hover:text-white/40",
+                        )}
+                      >
+                        Checks
+                        <span className="text-brand-orange/60 text-[8px] font-mono opacity-80">
+                          ({checkRuns.length})
+                        </span>
+                        {activeTab === "checks" && (
                           <motion.div
                             layoutId="activeTab"
                             className="absolute bottom-0 left-0 right-0 h-[1px] bg-brand-orange"
@@ -2384,11 +2555,21 @@ export default function App() {
                                 {selectedFile?.patch ? (
                                   <div className="w-fit min-w-full bg-black/20 font-mono text-[10px] sm:text-xs leading-relaxed">
                                     {diffRows.map((row, index) => (
+                                      (() => {
+                                        const rowId = row.newLine ? `line-${selectedFile?.filename}-${row.newLine}` : undefined;
+                                        const isHighlightedRange =
+                                          !!highlightedDiffTarget &&
+                                          highlightedDiffTarget.path === selectedFile?.filename &&
+                                          row.newLine != null &&
+                                          row.newLine >= highlightedDiffTarget.startLine &&
+                                          row.newLine <= highlightedDiffTarget.endLine;
+
+                                        return (
                                       <div
                                         key={`${index}-${row.content}`}
-                                        id={row.newLine ? `line-${selectedFile?.filename}-${row.newLine}` : undefined}
+                                        id={rowId}
                                         className={cn(
-                                          "grid min-w-full grid-cols-[3.5rem_3.5rem_1fr] transition-colors duration-500",
+                                          "relative grid min-w-full grid-cols-[3.5rem_3.5rem_1fr] transition-colors duration-500",
                                           row.kind === "added" &&
                                             "bg-emerald-500/[0.08] text-emerald-300/80",
                                           row.kind === "deleted" &&
@@ -2398,8 +2579,13 @@ export default function App() {
                                           row.kind === "meta" &&
                                             "text-white/20",
                                           row.kind === "context" && "text-white/60",
+                                          isHighlightedRange &&
+                                            "bg-brand-orange/[0.14] text-white ring-1 ring-inset ring-brand-orange/35 shadow-[inset_3px_0_0_rgba(255,107,43,0.85)]",
                                         )}
                                       >
+                                        {isHighlightedRange && (
+                                          <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-brand-orange" />
+                                        )}
                                         <div className="px-3 py-0.5 text-right text-white/10 select-none border-r border-white/5">
                                           {row.oldLine ?? ""}
                                         </div>
@@ -2410,6 +2596,8 @@ export default function App() {
                                           {row.content || " "}
                                         </pre>
                                       </div>
+                                        );
+                                      })()
                                     ))}
                                   </div>
                                 ) : (
@@ -2427,46 +2615,106 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                      {/* CI Checks List */}
-                      {selectedPull && checkRuns.length > 0 && (
-                        <section id="ci-pipeline" className="space-y-8 scroll-mt-24">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                              <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
-                                Pipeline
-                              </h3>
+                  ) : activeTab === "checks" ? (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <section className="space-y-8">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                            <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
+                              Pipeline
+                            </h3>
+                            <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono">
+                              <span className="text-emerald-500/80">{checkStats.success} passed</span>
+                              {checkStats.failure > 0 && (
+                                <span className="text-rose-500/80">{checkStats.failure} failed</span>
+                              )}
+                              {checkStats.pending > 0 && (
+                                <span className="text-amber-500/80">{checkStats.pending} running</span>
+                              )}
+                              {checkStats.skipped > 0 && (
+                                <span className="text-white/25">{checkStats.skipped} skipped</span>
+                              )}
+                              {checkSummary?.merge_state_status === "dirty" && (
+                                <>
+                                  <span className="text-white/12">/</span>
+                                  <span className="text-amber-200/55">merge conflicts</span>
+                                </>
+                              )}
                             </div>
-                            <span className="text-[10px] font-mono text-white/10">
-                              {checkRuns.length}
-                            </span>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {checkRuns.map((run) => (
-                              <button
-                                key={run.id}
-                                onClick={() => setSelectedRunId(run.id)}
-                                className="flex items-center justify-between py-6 border-l border-white/5 pl-8 hover:border-brand-orange/30 transition-all group text-left w-full hover:bg-white/[0.01]"
+                          <div className="flex items-center gap-4">
+                            {checkSummary?.merge_state_status === "dirty" && (
+                              <a
+                                href={selectedPull?.html_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.24em] text-white/18 transition-colors hover:text-amber-200/70"
                               >
-                                <div className="flex items-center gap-6 min-w-0">
-                                  <div className={cn(
+                                Resolve on GitHub
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {checkRuns.map((run) => (
+                            <button
+                              key={run.id}
+                              onClick={() => setSelectedRunId(run.id)}
+                              className="flex items-center justify-between py-6 border-l border-white/5 pl-8 hover:border-brand-orange/30 transition-all group text-left w-full hover:bg-white/[0.01]"
+                            >
+                              <div className="flex items-center gap-6 min-w-0">
+                                <div
+                                  className={cn(
                                     "w-1 h-1 rounded-full",
                                     run.conclusion === "success" ? "bg-emerald-500/40" :
                                     (run.conclusion === "failure" || run.conclusion === "timed_out") ? "bg-rose-500/40" :
-                                    "bg-white/10"
-                                  )} />
-                                    <div className="flex flex-col min-w-0">
-                                      <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 group-hover:text-white/80 transition-colors truncate">
-                                        {run.name}
-                                      </span>
-                                      <div className="flex items-center gap-3 mt-1">
-                                        <span className="text-[9px] font-mono text-white/10">{run.conclusion || run.status}</span>
-                                      </div>
-                                    </div>
+                                    "bg-white/10",
+                                  )}
+                                />
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 group-hover:text-white/80 transition-colors truncate">
+                                    {run.name}
+                                  </span>
+                                  <div className="flex items-center gap-3 mt-1">
+                                    <span className="text-[9px] font-mono text-white/10">{run.conclusion || run.status}</span>
+                                  </div>
                                 </div>
-                              </button>
-                            ))}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    </div>
+                  ) : (
+                    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      {selectedPull && checkRuns.length > 0 && (
+                        <section className="border-b border-white/5 pb-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                              <span className="text-[9px] font-medium uppercase tracking-[0.28em] text-white/20">
+                                Checks
+                              </span>
+                              <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono">
+                                <span className="text-emerald-500/80">{checkStats.success} passed</span>
+                                {checkStats.failure > 0 && (
+                                  <span className="text-rose-500/80">{checkStats.failure} failed</span>
+                                )}
+                                {checkStats.pending > 0 && (
+                                  <span className="text-amber-500/80">{checkStats.pending} running</span>
+                                )}
+                                {checkStats.skipped > 0 && (
+                                  <span className="text-white/25">{checkStats.skipped} skipped</span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setActiveTab("checks")}
+                              className="inline-flex items-center gap-2 self-start sm:self-auto text-[9px] font-medium uppercase tracking-[0.28em] text-white/20 transition-colors hover:text-brand-orange"
+                            >
+                              Open Checks
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
                           </div>
                         </section>
                       )}
@@ -2938,12 +3186,6 @@ export default function App() {
                                               <p className="text-[10px] uppercase tracking-widest font-bold">No step data available</p>
                                               <p className="text-[8px] max-w-xs leading-relaxed">This run does not expose step-level details yet.</p>
                                             </div>
-                                            <button
-                                              onClick={() => window.open(run.html_url, '_blank')}
-                                              className="px-6 py-2 border border-white/10 rounded-lg text-[8px] uppercase font-bold tracking-widest hover:bg-white/5 transition-all mt-4"
-                                            >
-                                              Open in GitHub
-                                            </button>
                                           </div>
                                         )}
                                       </div>
@@ -3001,19 +3243,19 @@ export default function App() {
                                 </div>
 
                                 {/* External Link Footer */}
-                                <div className="pt-8 border-t border-white/5">
-                                  <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-                                    <p className="text-[10px] text-white/30 max-w-md">
-                                      Open the GitHub Actions run for raw logs, artifacts, and full step details.
+                                <div className="pt-6 border-t border-white/5">
+                                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                    <p className="text-[10px] text-white/22 max-w-md">
+                                      Open the GitHub run for logs, artifacts, and full step detail.
                                     </p>
                                     <a
                                       href={run.html_url}
                                       target="_blank"
                                       rel="noreferrer"
-                                      className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group shrink-0"
+                                      className="inline-flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.24em] text-white/20 transition-colors hover:text-white/45 shrink-0"
                                     >
-                                      <span className="text-[10px] font-bold uppercase tracking-widest">Open in GitHub</span>
-                                      <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" />
+                                      <span>Open in GitHub</span>
+                                      <ExternalLink className="w-3 h-3" />
                                     </a>
                                   </div>
                                 </div>

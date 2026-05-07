@@ -9,6 +9,21 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.2.1",
+    date: "2026-05-08",
+    title: "History, Checks & Navigation Refinements",
+    description: "Corrected timeline behavior, check surfaces, and diff navigation feedback.",
+    category: "fix",
+    details: [
+      "PR timeline cleanup with duplicate-event fixes",
+      "PR description edit history rendering from user content edits",
+      "Checks tab split from review with corrected check counts",
+      "Merge conflict state surfaced in checks",
+      "Single-line and multi-line diff jump highlighting",
+      "Lower-noise checks and modal UI refinements"
+    ]
+  },
+  {
     version: "0.2.0",
     date: "2026-05-08",
     title: "Review API & CI Surfaces",
