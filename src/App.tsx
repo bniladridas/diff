@@ -1059,7 +1059,7 @@ export default function App() {
                   "w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full",
                   hasNewUpdates ? "bg-brand-orange animate-pulse" : "bg-white/10 group-hover:bg-white/30"
                 )} />
-                <span className="hidden sm:inline text-[8px] uppercase tracking-[0.2em] font-medium text-white/20 group-hover:text-white/40">Evolution</span>
+                <span className="hidden sm:inline text-[8px] uppercase tracking-[0.2em] font-medium text-white/20 group-hover:text-white/40">Updates</span>
               </button>
             </div>
 
@@ -2475,7 +2475,7 @@ export default function App() {
                                             <div className="p-6 bg-white/[0.02] border border-white/5 rounded-2xl space-y-4">
                                               <div className="flex items-center gap-2 text-white/20">
                                                 <FileText className="w-3 h-3" />
-                                                <span className="text-[8px] uppercase tracking-widest font-bold font-mono">Synthesized Data Report</span>
+                                                <span className="text-[8px] uppercase tracking-widest font-bold font-mono">Run Summary</span>
                                               </div>
                                               <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/60">
                                                 <ReactMarkdown>
@@ -2484,16 +2484,16 @@ export default function App() {
                                               </div>
                                             </div>
                                             <div className="flex flex-col items-center py-6 opacity-20 space-y-2">
-                                              <p className="text-[8px] uppercase tracking-widest font-bold">No granular steps provided by agent</p>
-                                              <p className="text-[8px] text-center max-w-xs">Viewing high-level status summary instead of sequence data.</p>
+                                              <p className="text-[8px] uppercase tracking-widest font-bold">No step details available</p>
+                                              <p className="text-[8px] text-center max-w-xs">Showing the run summary instead.</p>
                                             </div>
                                           </div>
                                         ) : (
                                           <div className="p-12 bg-white/[0.02] border border-white/5 rounded-2xl flex flex-col items-center space-y-4 opacity-20">
                                             <Activity className="w-8 h-8" />
                                             <div className="text-center space-y-1">
-                                              <p className="text-[10px] uppercase tracking-widest font-bold">No Execution Data Sequence</p>
-                                              <p className="text-[8px] max-w-xs leading-relaxed">Detailed sequence data is not available for this run. It might be in a pending state, or provided by an external integration that doesn't share step-level info.</p>
+                                              <p className="text-[10px] uppercase tracking-widest font-bold">No step data available</p>
+                                              <p className="text-[8px] max-w-xs leading-relaxed">This run does not expose step-level details yet.</p>
                                             </div>
                                             <button
                                               onClick={() => window.open(run.html_url, '_blank')}
@@ -2561,7 +2561,7 @@ export default function App() {
                                 <div className="pt-8 border-t border-white/5">
                                   <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
                                     <p className="text-[10px] text-white/30 max-w-md">
-                                      For raw logs, artifact downloads, or detailed step-by-step breakdown of this CI run, please visit the official GitHub Actions interface.
+                                      Open the GitHub Actions run for raw logs, artifacts, and full step details.
                                     </p>
                                     <a
                                       href={run.html_url}
@@ -2569,7 +2569,7 @@ export default function App() {
                                       rel="noreferrer"
                                       className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all group shrink-0"
                                     >
-                                      <span className="text-[10px] font-bold uppercase tracking-widest">Detailed Logs on GitHub</span>
+                                      <span className="text-[10px] font-bold uppercase tracking-widest">Open in GitHub</span>
                                       <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-100 transition-opacity" />
                                     </a>
                                   </div>
@@ -2592,7 +2592,7 @@ export default function App() {
                   <div className="text-center space-y-6 max-w-sm px-12">
                     <Code className="w-12 h-12 text-brand-orange/20 mx-auto" />
                     <p className="text-[10px] uppercase tracking-[0.5em] text-white/20 font-black leading-loose">
-                      Select a proposal from the stream to begin diff analysis.
+                      Select an item to inspect the diff.
                     </p>
                   </div>
                 )}
@@ -2622,7 +2622,7 @@ export default function App() {
               {/* Modal Header */}
               <div className="px-5 py-4 sm:px-6 lg:px-8 lg:py-5 flex items-center justify-between border-b border-white/5">
                 <div className="flex items-center gap-4">
-                  <h2 className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/30">Evolution</h2>
+                  <h2 className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/30">Updates</h2>
                 </div>
                 <button
                   onClick={() => setShowUpdates(false)}
