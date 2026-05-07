@@ -1,3 +1,4 @@
+---
 name: Nightly Prerelease
 
 "on":
@@ -14,7 +15,9 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_NIGHTLY_RELEASES == 'true'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      vars.ENABLE_NIGHTLY_RELEASES == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +53,7 @@ jobs:
           make_latest: false
           generate_release_notes: true
           body: |
-            Automated nightly prerelease from `${{ github.ref_name }}` at `${{ github.sha }}`.
+            Automated nightly prerelease from `${{ github.ref_name }}`.
+            Commit: `${{ github.sha }}`.
           files: |
             dist/*
