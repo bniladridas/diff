@@ -4,6 +4,7 @@ Last updated: 2026-05-08
 
 This repository now treats the release line as:
 
+- `v0.2.2` Mobile History & Changelog Polish
 - `v0.2.1` History, Checks & Navigation Refinements
 - `v0.2.0` Review API & CI Surfaces
 - `v0.1.2` Theme Switch & UI Cleanup
@@ -11,6 +12,8 @@ This repository now treats the release line as:
 - `v0.1.0` Core Diff Engine
 
 The in-app `Evolution` feed in `src/constants/updates.ts` should stay aligned with these tags and GitHub releases.
+
+The root `VERSION` file should stay aligned with `package.json` for each release.
 
 GitHub release automation is handled by `.github/workflows/release.yml` and requires `contents: write` so tag pushes can publish releases and upload `dist/*`.
 

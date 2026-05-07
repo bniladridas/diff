@@ -9,6 +9,19 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.2.2",
+    date: "2026-05-07",
+    title: "Mobile History & Changelog Polish",
+    description: "Tightened mobile tab behavior and aligned changelog metadata with released tags.",
+    category: "fix",
+    details: [
+      "Mobile tab labels and counts render cleanly on narrow screens",
+      "History navigation and checks UI alignment refinements",
+      "Changelog dates normalized to GitHub release publish dates",
+      "Local tags synced with the remote release line"
+    ]
+  },
+  {
     version: "0.2.1",
     date: "2026-05-07",
     title: "History, Checks & Navigation Refinements",
