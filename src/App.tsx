@@ -143,7 +143,7 @@ interface GithubReview {
   html_url: string;
 }
 
-type TimelineEvent = 
+type TimelineEvent =
   | { type: 'pr_created'; date: string; data: PullRequest }
   | { type: 'commit'; date: string; data: GithubCommit }
   | { type: 'comment'; date: string; data: GithubComment }
@@ -384,10 +384,10 @@ interface CheckRun {
 const getFileIcon = (path: string) => {
   if (!path) return <FileCode className="w-2.5 h-2.5 text-white/20" />;
   const ext = path.split('.').pop()?.toLowerCase();
-  
+
   switch (ext) {
     case 'rs':
-      return <Cpu className="w-2.5 h-2.5 text-brand-orange/40" />; 
+      return <Cpu className="w-2.5 h-2.5 text-brand-orange/40" />;
     case 'py':
       return <Terminal className="w-2.5 h-2.5 text-sky-400/40" />;
     case 'js':
@@ -484,7 +484,7 @@ export default function App() {
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
   const diffRows = parseDiffRows(selectedFile?.patch);
- 
+
   const navigateToComment = (path: string, line: number) => {
     setActiveTab("diff");
     const file = files.find(f => f.filename === path);
@@ -507,16 +507,16 @@ export default function App() {
 
   const getTimeline = (): TimelineEvent[] => {
     if (!selectedPull) return [];
-    
+
     const events: TimelineEvent[] = [
       { type: 'pr_created', date: selectedPull.created_at, data: selectedPull }
     ];
-    
+
     commits.forEach(c => events.push({ type: 'commit', date: c.commit.author.date, data: c }));
     comments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
     reviewComments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
     reviews.forEach(r => events.push({ type: 'review', date: r.submitted_at, data: r }));
-    
+
     return events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
@@ -1045,8 +1045,8 @@ export default function App() {
                   </AnimatePresence>
                 </div>
               </button>
-              
-              <button 
+
+              <button
                 onClick={() => {
                   setShowUpdates(true);
                   setHasNewUpdates(false);
@@ -1694,7 +1694,7 @@ export default function App() {
                         <div className="absolute left-[20px] top-0 bottom-0 w-px bg-white/5" />
 
                         {getTimeline().map((event, idx) => (
-                          <motion.div 
+                          <motion.div
                             key={`${event.type}-${idx}`}
                             initial={{ opacity: 0, x: -10 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -1782,7 +1782,7 @@ export default function App() {
                                     <ReactMarkdown>{(event.data as GithubComment).body}</ReactMarkdown>
                                   </div>
                                   {(event.data as GithubComment).path && (
-                                    <button 
+                                    <button
                                       onClick={() => {
                                         const comment = event.data as GithubComment;
                                         const line = comment.line || comment.original_line;
@@ -2223,7 +2223,7 @@ export default function App() {
                                       <span className="text-sm font-light text-white/60">
                                         {run.started_at ? (
                                           <>
-                                            {new Date(run.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
+                                            {new Date(run.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             {run.completed_at && ` — ${new Date(run.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
                                           </>
                                         ) : "—"}
@@ -2258,8 +2258,8 @@ export default function App() {
                                               <div className="flex items-center gap-3">
                                                 <div className={cn(
                                                   "w-1 h-1 rounded-full",
-                                                  suiteRun.conclusion === "success" ? "bg-emerald-500/60" : 
-                                                  suiteRun.conclusion === "failure" ? "bg-rose-500/60" : 
+                                                  suiteRun.conclusion === "success" ? "bg-emerald-500/60" :
+                                                  suiteRun.conclusion === "failure" ? "bg-rose-500/60" :
                                                   "bg-white/30"
                                                 )} />
                                                 <span className="text-[10px] font-medium text-white/80 tracking-wide">{suiteRun.name}</span>
@@ -2311,8 +2311,8 @@ export default function App() {
                                         <div className="flex justify-between text-[11px]">
                                           <span className="text-white/20">Duration</span>
                                           <span className="font-mono text-white/40">
-                                            {run.started_at && run.completed_at 
-                                              ? `${Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 60000)}m ${Math.round(((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) % 60000) / 1000)}s` 
+                                            {run.started_at && run.completed_at
+                                              ? `${Math.round((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 60000)}m ${Math.round(((new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) % 60000) / 1000)}s`
                                               : "Ongoing"}
                                           </span>
                                         </div>
@@ -2399,7 +2399,7 @@ export default function App() {
                                           </span>
                                         )}
                                       </div>
-                                      
+
                                       <div className="space-y-4">
                                         {errorRunDetail && (
                                           <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl mb-4 flex items-center gap-3">
@@ -2422,8 +2422,8 @@ export default function App() {
                                         ) : (selectedRunDetail?.steps && selectedRunDetail.steps.length > 0) ? (
                                           <div className="space-y-6">
                                             {selectedRunDetail.steps.map((step, idx) => (
-                                              <div 
-                                                key={step.number || idx} 
+                                              <div
+                                                key={step.number || idx}
                                                 className="group animate-in fade-in slide-in-from-left-4 duration-300 fill-mode-both"
                                                 style={{ animationDelay: `${idx * 40}ms` }}
                                               >
@@ -2477,7 +2477,7 @@ export default function App() {
                                               <p className="text-[10px] uppercase tracking-widest font-bold">No Execution Data Sequence</p>
                                               <p className="text-[8px] max-w-xs leading-relaxed">Detailed sequence data is not available for this run. It might be in a pending state, or provided by an external integration that doesn't share step-level info.</p>
                                             </div>
-                                            <button 
+                                            <button
                                               onClick={() => window.open(run.html_url, '_blank')}
                                               className="px-6 py-2 border border-white/10 rounded-lg text-[8px] uppercase font-bold tracking-widest hover:bg-white/5 transition-all mt-4"
                                             >
@@ -2505,7 +2505,7 @@ export default function App() {
                                           </span>
                                         )}
                                       </div>
-                                      
+
                                       <div className="bg-transparent border-l border-white/5 relative group">
                                         <div className="absolute top-4 right-4 z-10 flex gap-2">
                                           {loadingLogs && (
@@ -2583,7 +2583,7 @@ export default function App() {
           </AnimatePresence>
         </section>
       </main>
-      
+
       {/* Software Updates Modal */}
       <AnimatePresence>
         {showUpdates && (
@@ -2622,7 +2622,7 @@ export default function App() {
                     {idx !== APP_UPDATES.length - 1 && (
                       <div className="absolute left-[15px] top-8 bottom-0 w-px bg-white/5" />
                     )}
-                    
+
                     {/* Version Indicator */}
                     <div className="absolute left-0 top-2 w-4 h-4 flex items-center justify-center z-10">
                       <div className="w-1 h-1 rounded-full bg-white/10 group-hover:bg-brand-orange/40 transition-colors" />
@@ -2642,9 +2642,9 @@ export default function App() {
                         </div>
                         <span className="text-[9px] font-mono text-white/10">{update.date}</span>
                       </div>
-                      
+
                       <p className="text-[11px] text-white/30 leading-relaxed">{update.description}</p>
-                      
+
                       <div className="grid grid-cols-1 gap-1">
                         {update.details.map((detail, dIdx) => (
                           <div key={dIdx} className="flex items-start gap-4 py-0.5">
