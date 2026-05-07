@@ -281,7 +281,7 @@ async function startServer() {
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
 
-      const [annotations, suiteRuns] = await Promise.all([
+      const [annotations, suiteRuns, actionsJob] = await Promise.all([
         axios.get(
           `https://api.github.com/repos/${owner}/${repo}/check-runs/${check_run_id}/annotations`,
           { headers: getHeaders("application/vnd.github.v3+json") },
@@ -291,11 +291,29 @@ async function startServer() {
               `https://api.github.com/repos/${owner}/${repo}/check-suites/${runDetail.data.check_suite.id}/check-runs`,
               { headers: getHeaders("application/vnd.github.v3+json") }
             ).catch(() => ({ data: { check_runs: [] } }))
-          : Promise.resolve({ data: { check_runs: [] } })
+          : Promise.resolve({ data: { check_runs: [] } }),
+        axios.get(
+          `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${check_run_id}`,
+          { headers: getHeaders("application/vnd.github+json") },
+        ).catch(() => ({ data: null }))
       ]);
+
+      const actionJobData = actionsJob.data;
+      const mergedSteps = Array.isArray(actionJobData?.steps) && actionJobData.steps.length > 0
+        ? actionJobData.steps
+        : runDetail.data.steps || [];
 
       res.json({
         ...runDetail.data,
+        ...(actionJobData
+          ? {
+              steps: mergedSteps,
+              runner_name: actionJobData.runner_name,
+              labels: actionJobData.labels,
+              started_at: actionJobData.started_at || runDetail.data.started_at,
+              completed_at: actionJobData.completed_at || runDetail.data.completed_at,
+            }
+          : {}),
         annotations: annotations.data || [],
         suite_runs: suiteRuns.data.check_runs || []
       });

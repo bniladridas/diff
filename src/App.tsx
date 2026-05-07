@@ -40,6 +40,9 @@ import {
   Layers,
   ArrowDown,
   FileText,
+  FileArchive,
+  FileImage,
+  FileJson,
   History,
   GitCommit,
   User,
@@ -51,9 +54,14 @@ import {
   Menu,
   Palette,
   Settings,
-  Cpu,
+  Database,
+  Globe,
+  Lock,
+  Package,
+  Sheet,
+  Shield,
+  Binary,
   Code2,
-  Braces,
   Layout,
 } from "lucide-react";
 import { cn } from "./lib/utils";
@@ -383,39 +391,188 @@ interface CheckRun {
 
 const getFileIcon = (path: string) => {
   if (!path) return <FileCode className="w-2.5 h-2.5 text-white/20" />;
-  const ext = path.split('.').pop()?.toLowerCase();
+  const normalizedPath = path.toLowerCase();
+  const fileName = normalizedPath.split('/').pop() ?? "";
+  const ext = fileName.includes('.') ? fileName.split('.').pop() ?? "" : "";
 
-  switch (ext) {
-    case 'rs':
-      return <Cpu className="w-2.5 h-2.5 text-brand-orange/40" />;
-    case 'py':
-      return <Terminal className="w-2.5 h-2.5 text-sky-400/40" />;
-    case 'js':
-    case 'ts':
-    case 'tsx':
-    case 'jsx':
-      return <Code2 className="w-2.5 h-2.5 text-amber-400/40" />;
-    case 'go':
-      return <Activity className="w-2.5 h-2.5 text-blue-400/40" />;
-    case 'md':
-    case 'txt':
-    case 'doc':
-    case 'docx':
-    case 'pdf':
-      return <FileText className="w-2.5 h-2.5 text-white/20" />;
-    case 'json':
-    case 'yml':
-    case 'yaml':
-    case 'toml':
-      return <Braces className="w-2.5 h-2.5 text-white/20" />;
-    case 'html':
-      return <Layout className="w-2.5 h-2.5 text-emerald-400/40" />;
-    case 'css':
-    case 'scss':
-      return <Palette className="w-2.5 h-2.5 text-pink-400/40" />;
-    default:
-      return <FileCode className="w-2.5 h-2.5 text-white/20" />;
+  const iconClass = "w-2.5 h-2.5";
+
+  const packageFiles = new Set([
+    "cargo.toml",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+    "composer.json",
+    "composer.lock",
+    "gemfile",
+    "gemfile.lock",
+    "podfile",
+    "podfile.lock",
+    "mix.exs",
+    "mix.lock",
+    "pubspec.yaml",
+    "pubspec.lock",
+  ]);
+
+  if (packageFiles.has(fileName)) {
+    return <Package className={`${iconClass} text-brand-orange/40`} />;
   }
+
+  if (fileName === "dockerfile" || fileName.startsWith("dockerfile.")) {
+    return <Package className={`${iconClass} text-sky-400/40`} />;
+  }
+
+  if (fileName === ".gitignore" || fileName === ".gitattributes" || fileName === ".editorconfig") {
+    return <Settings className={`${iconClass} text-white/20`} />;
+  }
+
+  if (fileName.includes("license")) {
+    return <Shield className={`${iconClass} text-white/20`} />;
+  }
+
+  if (fileName.startsWith("readme") || fileName.startsWith("changelog") || fileName.startsWith("contributing")) {
+    return <FileText className={`${iconClass} text-white/20`} />;
+  }
+
+  if (fileName.endsWith(".lock")) {
+    return <Lock className={`${iconClass} text-white/20`} />;
+  }
+
+  if (
+    [
+      "rs", "c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx", "m", "mm",
+      "swift", "kt", "kts", "java", "scala", "clj", "cljs", "ex", "exs",
+      "erl", "hrl", "zig", "nim", "lua", "rb", "php", "py", "r", "jl",
+      "go", "js", "mjs", "cjs", "ts", "tsx", "jsx", "vue", "svelte", "astro"
+    ].includes(ext)
+  ) {
+    const color =
+      ext === "py" ? "text-sky-400/40" :
+      ext === "go" ? "text-blue-400/40" :
+      ["js", "mjs", "cjs", "ts", "tsx", "jsx", "vue", "svelte", "astro"].includes(ext) ? "text-amber-400/40" :
+      ext === "rs" ? "text-brand-orange/40" :
+      "text-white/25";
+    return <FileCode className={`${iconClass} ${color}`} />;
+  }
+
+  if (["sh", "bash", "zsh", "fish", "ps1"].includes(ext)) {
+    return <Terminal className={`${iconClass} text-sky-400/40`} />;
+  }
+
+  if (["sql", "psql", "mysql", "sqlite", "prisma"].includes(ext)) {
+    return <Database className={`${iconClass} text-cyan-400/40`} />;
+  }
+
+  if (["json", "jsonc", "json5", "yml", "yaml", "toml", "ini", "conf", "cfg"].includes(ext)) {
+    return <FileJson className={`${iconClass} text-white/20`} />;
+  }
+
+  if (["html", "htm"].includes(ext)) {
+    return <Layout className={`${iconClass} text-emerald-400/40`} />;
+  }
+
+  if (["css", "scss", "sass", "less", "pcss"].includes(ext)) {
+    return <Palette className={`${iconClass} text-pink-400/40`} />;
+  }
+
+  if (["md", "mdx", "txt", "rst", "adoc", "doc", "docx", "pdf"].includes(ext)) {
+    return <FileText className={`${iconClass} text-white/20`} />;
+  }
+
+  if (["csv", "tsv", "xls", "xlsx"].includes(ext)) {
+    return <Sheet className={`${iconClass} text-emerald-400/40`} />;
+  }
+
+  if (["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp"].includes(ext)) {
+    return <FileImage className={`${iconClass} text-violet-400/40`} />;
+  }
+
+  if (["mp4", "mov", "webm", "avi", "mkv", "mp3", "wav", "ogg", "flac"].includes(ext)) {
+    return <Activity className={`${iconClass} text-violet-400/30`} />;
+  }
+
+  if (["zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "jar"].includes(ext)) {
+    return <FileArchive className={`${iconClass} text-amber-400/35`} />;
+  }
+
+  if (["wasm", "bin", "so", "dll", "dylib", "exe", "o", "a", "class"].includes(ext)) {
+    return <Binary className={`${iconClass} text-white/20`} />;
+  }
+
+  if (["pem", "crt", "cer", "key", "csr"].includes(ext)) {
+    return <Shield className={`${iconClass} text-white/20`} />;
+  }
+
+  if (["graphql", "gql"].includes(ext)) {
+    return <Globe className={`${iconClass} text-pink-400/40`} />;
+  }
+
+  return <FileCode className={`${iconClass} text-white/20`} />;
+};
+
+const getFileKindLabel = (path: string) => {
+  const normalizedPath = path.toLowerCase();
+  const fileName = normalizedPath.split("/").pop() ?? "";
+  const ext = fileName.includes(".") ? fileName.split(".").pop() ?? "" : "";
+
+  const packageFiles = new Set([
+    "cargo.toml",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+    "composer.json",
+    "composer.lock",
+    "gemfile",
+    "gemfile.lock",
+    "podfile",
+    "podfile.lock",
+    "mix.exs",
+    "mix.lock",
+    "pubspec.yaml",
+    "pubspec.lock",
+  ]);
+
+  if (packageFiles.has(fileName)) return "package";
+  if (fileName === "dockerfile" || fileName.startsWith("dockerfile.")) return "docker";
+  if (fileName === ".gitignore" || fileName === ".gitattributes" || fileName === ".editorconfig") return "config";
+  if (fileName.includes("license")) return "license";
+  if (fileName.startsWith("readme") || fileName.startsWith("changelog") || fileName.startsWith("contributing")) return "docs";
+  if (fileName.endsWith(".lock")) return "lock";
+  if (ext === "rs") return "rust";
+  if (ext === "py") return "python";
+  if (ext === "go") return "go";
+  if (["js", "mjs", "cjs"].includes(ext)) return "javascript";
+  if (["ts", "tsx"].includes(ext)) return "typescript";
+  if (ext === "jsx") return "react";
+  if (ext === "vue") return "vue";
+  if (ext === "svelte") return "svelte";
+  if (ext === "astro") return "astro";
+  if (["c", "cc", "cpp", "cxx", "h", "hh", "hpp", "hxx"].includes(ext)) return "c++";
+  if (ext === "java") return "java";
+  if (["kt", "kts"].includes(ext)) return "kotlin";
+  if (ext === "swift") return "swift";
+  if (ext === "rb") return "ruby";
+  if (ext === "php") return "php";
+  if (["sh", "bash", "zsh", "fish", "ps1"].includes(ext)) return "shell";
+  if (["sql", "psql", "mysql", "sqlite", "prisma"].includes(ext)) return "data";
+  if (["json", "jsonc", "json5", "yml", "yaml", "toml", "ini", "conf", "cfg"].includes(ext)) return "config";
+  if (["html", "htm"].includes(ext)) return "html";
+  if (["css", "scss", "sass", "less", "pcss"].includes(ext)) return "styles";
+  if (["md", "mdx", "txt", "rst", "adoc", "doc", "docx", "pdf"].includes(ext)) return "docs";
+  if (["csv", "tsv", "xls", "xlsx"].includes(ext)) return "sheet";
+  if (["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp"].includes(ext)) return "image";
+  if (["mp4", "mov", "webm", "avi", "mkv", "mp3", "wav", "ogg", "flac"].includes(ext)) return "media";
+  if (["zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar", "jar"].includes(ext)) return "archive";
+  if (["wasm", "bin", "so", "dll", "dylib", "exe", "o", "a", "class"].includes(ext)) return "binary";
+  if (["pem", "crt", "cer", "key", "csr"].includes(ext)) return "security";
+  if (["graphql", "gql"].includes(ext)) return "graphql";
+  return ext || "file";
 };
 
 export default function App() {
@@ -517,7 +674,13 @@ export default function App() {
     commits.forEach(c => events.push({ type: 'commit', date: c.commit.author.date, data: c }));
     comments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
     reviewComments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
-    reviews.forEach(r => events.push({ type: 'review', date: r.submitted_at, data: r }));
+    reviews
+      .filter((review) => {
+        const state = review.state?.toUpperCase();
+        const hasBody = Boolean(review.body?.trim());
+        return state !== "COMMENTED" || hasBody;
+      })
+      .forEach(r => events.push({ type: 'review', date: r.submitted_at, data: r }));
 
     return events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
@@ -1813,6 +1976,9 @@ export default function App() {
                                        <div className="flex items-center gap-2 overflow-hidden">
                                           {getFileIcon((event.data as GithubComment).path)}
                                           <span className="text-[8px] font-mono truncate">{(event.data as GithubComment).path}</span>
+                                          <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                                            {getFileKindLabel((event.data as GithubComment).path)}
+                                          </span>
                                        </div>
                                        <div className="flex items-center gap-2">
                                           <span className="text-[8px] font-mono">Line {(event.data as GithubComment).line || (event.data as GithubComment).original_line}</span>
@@ -2118,6 +2284,9 @@ export default function App() {
                                     <span className="text-[9px] font-mono text-white/20">
                                       {comment.path}
                                     </span>
+                                    <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                                      {getFileKindLabel(comment.path)}
+                                    </span>
                                   </div>
                                   <a
                                     href={comment.html_url}
@@ -2194,6 +2363,9 @@ export default function App() {
                               <div className="p-5 sm:p-6 lg:p-8 border-b border-white/5 flex items-start justify-between gap-4">
                                 <div className="flex items-center gap-4 min-w-0">
                                   <div className="flex flex-col">
+                                    <span className="mb-1 text-[8px] uppercase tracking-[0.2em] font-medium text-white/20">
+                                      {run.type === "status" ? "Commit Status" : "Check Run"}
+                                    </span>
                                     <div className="flex items-center gap-4">
                                       <h2 className="text-xs sm:text-sm font-medium uppercase tracking-[0.2em] text-white/50 break-words">
                                         {run.name}
@@ -2253,7 +2425,9 @@ export default function App() {
                                 {/* Visual Workflow Diagram */}
                                 <div className="space-y-8">
                                   <div className="flex items-center gap-3">
-                                    <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">Pipeline</h3>
+                                    <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
+                                      Related Checks
+                                    </h3>
                                   </div>
 
                                   <div className="relative">
@@ -2295,7 +2469,9 @@ export default function App() {
                                         ))
                                       ) : (
                                         <div className="flex-1 flex flex-col items-center justify-center py-6 opacity-10">
-                                          <span className="text-[8px] uppercase tracking-widest font-medium">Single Thread Execution</span>
+                                          <span className="text-[8px] uppercase tracking-widest font-medium">
+                                            Single Check
+                                          </span>
                                         </div>
                                       )}
                                     </div>
@@ -2308,7 +2484,7 @@ export default function App() {
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
                                     <div className="space-y-4">
                                       <div className="flex items-center gap-2 text-white/10">
-                                        <span className="text-[8px] uppercase tracking-widest font-medium">Specifications</span>
+                                        <span className="text-[8px] uppercase tracking-widest font-medium">Details</span>
                                       </div>
                                       <div className="space-y-3">
                                         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between text-[11px]">
@@ -2323,7 +2499,7 @@ export default function App() {
                                     </div>
                                     <div className="space-y-4">
                                       <div className="flex items-center gap-2 text-white/10">
-                                        <span className="text-[8px] uppercase tracking-widest font-medium">Metrics</span>
+                                        <span className="text-[8px] uppercase tracking-widest font-medium">Timing</span>
                                       </div>
                                       <div className="space-y-3">
                                         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between text-[11px]">
@@ -2335,7 +2511,7 @@ export default function App() {
                                           </span>
                                         </div>
                                         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between text-[11px]">
-                                          <span className="text-white/20">Latency</span>
+                                          <span className="text-white/20">Started</span>
                                           <span className="font-mono text-white/40 sm:text-right">{run.started_at ? new Date(run.started_at).toLocaleTimeString() : "n/a"}</span>
                                         </div>
                                       </div>
@@ -2357,6 +2533,9 @@ export default function App() {
                                               <div className="flex items-start gap-3 min-w-0">
                                                 {getFileIcon(ann.path)}
                                                 <span className="text-[10px] font-mono text-white/40 underline decoration-white/5 underline-offset-4 break-all min-w-0">{ann.path}:{ann.start_line}</span>
+                                                <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                                                  {getFileKindLabel(ann.path)}
+                                                </span>
                                               </div>
                                             </div>
                                             <p className="text-xs text-white/80 font-mono leading-relaxed break-words overflow-hidden">{ann.message}</p>
@@ -2430,7 +2609,7 @@ export default function App() {
                                         {run.type === "status" ? (
                                           <div className="p-12 bg-white/[0.01] border border-white/5 rounded-2xl flex flex-col items-center space-y-4 opacity-10">
                                             <CircleSlash className="w-4 h-4" />
-                                            <p className="text-[10px] uppercase tracking-widest font-medium">Commit Status Point</p>
+                                            <p className="text-[10px] uppercase tracking-widest font-medium">Commit Status</p>
                                           </div>
                                         ) : loadingRunDetail ? (
                                           <div className="py-12 flex flex-col items-center justify-center space-y-4 opacity-20">
