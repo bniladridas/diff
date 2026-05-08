@@ -6,11 +6,13 @@
 import {
   Children,
   isValidElement,
+  useCallback,
   useState,
   useEffect,
   useRef,
   type ReactNode,
 } from "react";
+import { type Session, type User as SupabaseUser } from "@supabase/supabase-js";
 import { motion, AnimatePresence } from "motion/react";
 import {
   GitBranch,
@@ -63,8 +65,20 @@ import {
   Binary,
   Code2,
   Layout,
+  LogOut,
+  Bookmark,
 } from "lucide-react";
 import { cn } from "./lib/utils";
+import {
+  fetchUserPreferences,
+  isSupabaseConfigured,
+  isMissingUserPreferencesTableError,
+  type RecentRepoPreference,
+  type SavedPullPreference,
+  supabase,
+  type ThemePreference,
+  upsertUserPreferences,
+} from "./lib/supabase";
 import ReactMarkdown from "react-markdown";
 import { APP_UPDATES } from "./constants/updates";
 import rehypeRaw from "rehype-raw";
@@ -119,6 +133,7 @@ interface PullRequest {
   };
   head?: {
     ref: string;
+    sha?: string;
   };
 }
 
@@ -222,7 +237,8 @@ interface GithubContentEdit {
 
 type TimelineEvent =
   | { type: 'commit'; date: string; data: GithubCommit }
-  | { type: 'comment'; date: string; data: GithubComment }
+  | { type: 'issue_comment'; date: string; data: GithubComment }
+  | { type: 'review_comment'; date: string; data: GithubComment }
   | { type: 'timeline'; date: string; data: GithubTimelineEvent }
   | { type: 'content_edit'; date: string; data: GithubContentEdit };
 
@@ -247,8 +263,92 @@ interface DiffRow {
   newLine: number | null;
 }
 
+interface DiffE2EState {
+  authUserId: string | null;
+  authEmail: string | null;
+  authLoading: boolean;
+  authError: string | null;
+  preferencesLoading: boolean;
+  preferencesSetupHint: string | null;
+  theme: ThemePreference;
+  currentOwner: string;
+  currentRepo: string;
+  defaultRepo: { owner: string; repo: string };
+  recentReposCount: number;
+  savedPullsCount: number;
+  selectedPullNumber: number | null;
+  loadedPullNumbers: number[];
+  loadedFilesCount: number;
+  loading: boolean;
+  activeTab: "diff" | "discussion" | "checks" | "timeline";
+  isSidebarOpen: boolean;
+  showUpdates: boolean;
+  authMenuOpen: boolean;
+  githubWriteEnabled: boolean;
+}
+
+interface DiffE2EBridge {
+  getState: () => DiffE2EState;
+  getSessionSeed: () => { access_token: string; refresh_token: string };
+  getSessionSnapshot: () => Session;
+  setSession: (session: Session) => Promise<void>;
+  signOut: () => Promise<void>;
+  setTheme: (theme: ThemePreference) => void;
+  setDefaultRepo: (owner: string, repo: string) => void;
+  switchRepo: (owner: string, repo: string) => void;
+  reloadPulls: () => Promise<void>;
+  selectPull: (number: number) => void;
+  toggleSaveSelectedPull: () => void;
+  openUpdates: () => void;
+  closeUpdates: () => void;
+  openAuthMenu: () => void;
+  closeAuthMenu: () => void;
+  openSidebar: () => void;
+  closeSidebar: () => void;
+  submitDiscussionComment: (body: string) => Promise<void>;
+  submitInlineReviewComment: (
+    body: string,
+    line?: number,
+    startLine?: number | null,
+  ) => Promise<void>;
+  submitReviewAction: (
+    event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
+    body?: string,
+  ) => Promise<void>;
+  writeSessionFile: () => Promise<{ ok: boolean; path: string }>;
+}
+
+declare global {
+  interface Window {
+    __DIFF_E2E__?: DiffE2EBridge;
+  }
+}
+
 const SYSTEM_OWNER = "harpertoken";
 const SYSTEM_REPO = "harper";
+const LOCAL_STORAGE_DEFAULT_REPO_KEY = "diff_default_repo";
+const LOCAL_STORAGE_THEME_KEY = "diff_theme";
+const LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY = "diff_github_provider_token";
+const SYSTEM_DEFAULT_REPO = { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
+const readStoredDefaultRepo = () => {
+  const saved = localStorage.getItem(LOCAL_STORAGE_DEFAULT_REPO_KEY);
+  if (!saved) return SYSTEM_DEFAULT_REPO;
+
+  try {
+    return JSON.parse(saved) as { owner: string; repo: string };
+  } catch {
+    return SYSTEM_DEFAULT_REPO;
+  }
+};
+const readStoredTheme = (): ThemePreference => {
+  return (
+    (localStorage.getItem(LOCAL_STORAGE_THEME_KEY) as ThemePreference) || "dark"
+  );
+};
+const readStoredGitHubProviderToken = () => {
+  return localStorage.getItem(LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY);
+};
+const MAX_RECENT_REPOS = 6;
 const ALERT_TYPES = {
   NOTE: "border-sky-500/20 bg-sky-500/[0.06] text-sky-300",
   TIP: "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-300",
@@ -300,6 +400,37 @@ const getTextContent = (node: ReactNode): string => {
 
 const normalizeAlertMarkdown = (node: ReactNode) =>
   getTextContent(node).replace(ALERT_MARKER_PATTERN, "").trim();
+
+function Tooltip({
+  content,
+  children,
+  wrapperClassName,
+  side = "bottom",
+}: {
+  content: string;
+  children: ReactNode;
+  wrapperClassName?: string;
+  side?: "bottom" | "right";
+}) {
+  const tooltipClassName =
+    side === "right"
+      ? "left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 scale-[0.98] group-hover/tooltip:translate-x-0 group-hover/tooltip:scale-100 group-focus-within/tooltip:translate-x-0 group-focus-within/tooltip:scale-100"
+      : "left-1/2 top-full mt-2 -translate-x-1/2 translate-y-1 scale-[0.98] group-hover/tooltip:translate-y-0 group-hover/tooltip:scale-100 group-focus-within/tooltip:translate-y-0 group-focus-within/tooltip:scale-100";
+
+  return (
+    <span className={cn("group/tooltip relative inline-flex", wrapperClassName)}>
+      {children}
+      <span
+        className={cn(
+          "pointer-events-none absolute z-[80] whitespace-nowrap rounded-[18px] border border-white/8 bg-panel px-4 py-2 text-[11px] font-medium tracking-[0.01em] text-white opacity-0 shadow-[0_12px_30px_rgba(0,0,0,0.32)] transition-[opacity,transform] duration-150 ease-out group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
+          tooltipClassName,
+        )}
+      >
+        {content}
+      </span>
+    </span>
+  );
+}
 
 const parseDiffRows = (patch?: string): DiffRow[] => {
   if (!patch) return [];
@@ -657,17 +788,7 @@ const getFileKindLabel = (path: string) => {
 
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
-  const [defaultRepo, setDefaultRepo] = useState(() => {
-    const saved = localStorage.getItem("diff_default_repo");
-    if (saved) {
-      try {
-        return JSON.parse(saved) as { owner: string; repo: string };
-      } catch {
-        return { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
-      }
-    }
-    return { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
-  });
+  const [defaultRepo, setDefaultRepo] = useState(readStoredDefaultRepo);
   const [currentOwner, setCurrentOwner] = useState(defaultRepo.owner);
   const [currentRepo, setCurrentRepo] = useState(defaultRepo.repo);
   const [showRepoInput, setShowRepoInput] = useState(false);
@@ -710,9 +831,32 @@ export default function App() {
   const [stateFilter, setStateFilter] = useState<"open" | "closed" | "all">(
     "open",
   );
-  const [theme, setTheme] = useState<"dark" | "midnight" | "grey">(() => {
-    return (localStorage.getItem("diff_theme") as "dark" | "midnight" | "grey") || "dark";
-  });
+  const [theme, setTheme] = useState<ThemePreference>(readStoredTheme);
+  const [authSession, setAuthSession] = useState<Session | null>(null);
+  const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
+  const [githubProviderToken, setGitHubProviderToken] = useState<string | null>(
+    readStoredGitHubProviderToken,
+  );
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMenuOpen, setAuthMenuOpen] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [preferencesSetupHint, setPreferencesSetupHint] = useState<string | null>(null);
+  const [preferencesLoading, setPreferencesLoading] = useState(false);
+  const [preferencesSyncing, setPreferencesSyncing] = useState(false);
+  const [isSidebarAccountOpen, setIsSidebarAccountOpen] = useState(false);
+  const [isSidebarRecentReposOpen, setIsSidebarRecentReposOpen] = useState(false);
+  const [isSidebarSavedPullsOpen, setIsSidebarSavedPullsOpen] = useState(false);
+  const [recentRepos, setRecentRepos] = useState<RecentRepoPreference[]>([]);
+  const [savedPulls, setSavedPulls] = useState<SavedPullPreference[]>([]);
+  const [newCommentBody, setNewCommentBody] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
+  const [newReviewCommentBody, setNewReviewCommentBody] = useState("");
+  const [reviewCommentLine, setReviewCommentLine] = useState("");
+  const [reviewCommentStartLine, setReviewCommentStartLine] = useState("");
+  const [submittingReviewComment, setSubmittingReviewComment] = useState(false);
+  const [newReviewBody, setNewReviewBody] = useState("");
+  const [submittingReview, setSubmittingReview] = useState<"COMMENT" | "APPROVE" | "REQUEST_CHANGES" | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [captchaInput, setCaptchaInput] = useState("");
@@ -725,6 +869,16 @@ export default function App() {
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
   const diffHighlightTimeoutRef = useRef<number | null>(null);
+  const authMenuRef = useRef<HTMLDivElement | null>(null);
+  const preferencesHydratedRef = useRef(false);
+  const suspendedCorePreferenceValueRef = useRef<string | null>(null);
+  const suspendedRecentReposValueRef = useRef<string | null>(null);
+  const suspendedSavedPullsValueRef = useRef<string | null>(null);
+  const preferenceSyncChainRef = useRef(Promise.resolve());
+  const preferenceSyncSequenceRef = useRef(0);
+  const preferenceSyncPendingCountRef = useRef(0);
+  const authUserIdRef = useRef<string | null>(null);
+  const pendingSavedPullRef = useRef<SavedPullPreference | null>(null);
   const diffRows = parseDiffRows(selectedFile?.patch);
   const releasedUpdates = APP_UPDATES.filter((update) => update.category !== "planned");
   const plannedUpdates = APP_UPDATES.filter((update) => update.category === "planned");
@@ -746,6 +900,39 @@ export default function App() {
     },
     { success: 0, failure: 0, pending: 0, cancelled: 0, skipped: 0, other: 0 },
   );
+  const authDisplayName =
+    authUser?.user_metadata?.user_name ||
+    authUser?.user_metadata?.preferred_username ||
+    authUser?.email?.split("@")[0] ||
+    authUser?.email ||
+    "Account";
+  const authAvatarUrl =
+    authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture;
+  const authProvider =
+    typeof authSession?.user.app_metadata?.provider === "string"
+      ? authSession.user.app_metadata.provider
+      : "github";
+  const selectedPullIsSaved = selectedPull
+    ? savedPulls.some(
+        (pull) =>
+          pull.owner === currentOwner &&
+          pull.repo === currentRepo &&
+          pull.pull_number === selectedPull.number,
+      )
+    : false;
+  const availableReviewLines = Array.from(
+    new Set(
+      diffRows
+        .filter(
+          (row) =>
+            row.newLine != null &&
+            row.kind !== "deleted" &&
+            row.kind !== "meta" &&
+            row.kind !== "hunk",
+        )
+        .map((row) => row.newLine as number),
+    ),
+  ).sort((a, b) => a - b);
 
   const navigateToComment = (path: string, line: number, startLine?: number) => {
     setActiveTab("diff");
@@ -789,14 +976,349 @@ export default function App() {
 
   const reviewById = new Map(reviews.map((review) => [review.id, review]));
 
+  const trackRecentRepo = (owner: string, repo: string) => {
+    setRecentRepos((current) => {
+      const next: RecentRepoPreference[] = [
+        {
+          owner,
+          repo,
+          last_viewed_at: new Date().toISOString(),
+        },
+        ...current.filter(
+          (entry) => !(entry.owner === owner && entry.repo === repo),
+        ),
+      ];
+
+      return next.slice(0, MAX_RECENT_REPOS);
+    });
+  };
+
+  const toggleSavedPull = () => {
+    if (!selectedPull) return;
+
+    setSavedPulls((current) => {
+      const exists = current.some(
+        (pull) =>
+          pull.owner === currentOwner &&
+          pull.repo === currentRepo &&
+          pull.pull_number === selectedPull.number,
+      );
+
+      if (exists) {
+        return current.filter(
+          (pull) =>
+            !(
+              pull.owner === currentOwner &&
+              pull.repo === currentRepo &&
+              pull.pull_number === selectedPull.number
+            ),
+        );
+      }
+
+      return [
+        {
+          owner: currentOwner,
+          repo: currentRepo,
+          pull_number: selectedPull.number,
+          title: selectedPull.title,
+          html_url: selectedPull.html_url,
+          state: selectedPull.state,
+          draft: Boolean(selectedPull.draft),
+          saved_at: new Date().toISOString(),
+        },
+        ...current,
+      ];
+    });
+  };
+
+  const openSavedPull = (savedPull: SavedPullPreference) => {
+    pendingSavedPullRef.current = savedPull;
+    setViewMode("pulls");
+    setStateFilter(savedPull.state === "closed" ? "closed" : "open");
+    setIsSidebarOpen(false);
+
+    if (savedPull.owner !== currentOwner || savedPull.repo !== currentRepo) {
+      switchRepo(savedPull.owner, savedPull.repo);
+      return;
+    }
+
+    const existingPull = pulls.find((pull) => pull.number === savedPull.pull_number);
+    if (existingPull) {
+      handleSelectPull(existingPull);
+      pendingSavedPullRef.current = null;
+    } else {
+      fetchPulls(1, true);
+    }
+  };
+
+  const signInWithGitHub = async () => {
+    if (!supabase) return;
+    setAuthError(null);
+    setAuthMenuOpen(false);
+    setAuthLoading(true);
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: {
+        redirectTo,
+        scopes: "repo read:user user:email",
+      },
+    });
+
+    if (signInError) {
+      setAuthError(signInError.message);
+      setAuthLoading(false);
+    }
+  };
+
+  const signOut = async () => {
+    if (!supabase) return;
+    setAuthError(null);
+    setAuthMenuOpen(false);
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      setAuthError(signOutError.message);
+    }
+  };
+
+  const getWriteHeaders = () => {
+    if (!authSession?.access_token) {
+      throw new Error("Supabase session is missing. Sign in again.");
+    }
+
+    if (!githubProviderToken) {
+      throw new Error("GitHub write token is missing. Refresh sign-in.");
+    }
+
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authSession.access_token}`,
+      "X-GitHub-Provider-Token": githubProviderToken,
+    };
+  };
+
+  const refreshReviewData = async (pullNumber: number) => {
+    const [commentsRes, reviewCommentsRes, reviewsRes, timelineRes] = await Promise.all([
+      fetch(`/api/pulls/${pullNumber}/comments?owner=${currentOwner}&repo=${currentRepo}`),
+      fetch(`/api/pulls/${pullNumber}/review-comments?owner=${currentOwner}&repo=${currentRepo}`),
+      fetch(`/api/pulls/${pullNumber}/reviews?owner=${currentOwner}&repo=${currentRepo}`),
+      fetch(`/api/pulls/${pullNumber}/timeline?owner=${currentOwner}&repo=${currentRepo}`),
+    ]);
+
+    if (commentsRes.ok) setComments(await commentsRes.json());
+    if (reviewCommentsRes.ok) setReviewComments(await reviewCommentsRes.json());
+    if (reviewsRes.ok) setReviews(await reviewsRes.json());
+    if (timelineRes.ok) setTimelineEvents(await timelineRes.json());
+  };
+
+  const submitComment = async (bodyOverride?: string) => {
+    if (!selectedPull) return;
+
+    const body = (bodyOverride ?? newCommentBody).trim();
+    if (!body) {
+      setWriteError("Comment body is required.");
+      return;
+    }
+
+    setSubmittingComment(true);
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}/comments?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "POST",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({ body }),
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to publish comment.");
+      }
+
+      setComments((current) => [...current, data]);
+      setAuthError(null);
+      if (!bodyOverride) {
+        setNewCommentBody("");
+      }
+      return data;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to publish comment.";
+      setWriteError(message);
+      throw new Error(message);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  const submitInlineReviewComment = async (
+    bodyOverride?: string,
+    lineOverride?: number,
+    startLineOverride?: number | null,
+    fileOverride?: ChangedFile,
+  ) => {
+    if (!selectedPull || !selectedFile) return;
+
+    const targetFile = fileOverride ?? selectedFile;
+    const targetReviewLines = parseDiffRows(targetFile.patch)
+      .filter(
+        (row) =>
+          row.newLine != null &&
+          row.kind !== "deleted" &&
+          row.kind !== "meta" &&
+          row.kind !== "hunk",
+      )
+      .map((row) => row.newLine as number);
+    const body = (bodyOverride ?? newReviewCommentBody).trim();
+    const line = Number(lineOverride ?? reviewCommentLine);
+    const startLineValue =
+      startLineOverride !== undefined
+        ? startLineOverride
+        : reviewCommentStartLine.trim().length > 0
+        ? Number(reviewCommentStartLine)
+        : null;
+
+    if (!body) {
+      setWriteError("Review comment body is required.");
+      return;
+    }
+
+    if (!selectedPull.head?.sha) {
+      setWriteError("Head commit SHA is missing for this pull request.");
+      return;
+    }
+
+    if (!Number.isFinite(line) || line <= 0) {
+      setWriteError("Choose a valid target line.");
+      return;
+    }
+
+    if (!targetReviewLines.includes(line)) {
+      setWriteError("Target line is not present in the current diff.");
+      return;
+    }
+
+    if (
+      startLineValue != null &&
+      (!Number.isFinite(startLineValue) ||
+        startLineValue <= 0 ||
+        !targetReviewLines.includes(startLineValue))
+    ) {
+      setWriteError("Start line is not present in the current diff.");
+      return;
+    }
+
+    setSubmittingReviewComment(true);
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}/review-comments?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "POST",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            body,
+            path: targetFile.filename,
+            commit_id: selectedPull.head.sha,
+            line,
+            side: "RIGHT",
+            start_line:
+              startLineValue != null && startLineValue !== line
+                ? startLineValue
+                : undefined,
+            start_side:
+              startLineValue != null && startLineValue !== line
+                ? "RIGHT"
+                : undefined,
+          }),
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to publish review comment.");
+      }
+
+      setReviewComments((current) => [...current, data]);
+      setAuthError(null);
+      if (!bodyOverride) {
+        setNewReviewCommentBody("");
+        setReviewCommentStartLine("");
+      }
+      await refreshReviewData(selectedPull.number);
+      return data;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to publish review comment.";
+      setWriteError(message);
+      throw new Error(message);
+    } finally {
+      setSubmittingReviewComment(false);
+    }
+  };
+
+  const submitReview = async (
+    event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
+    bodyOverride?: string,
+  ) => {
+    if (!selectedPull) return;
+
+    const body = (bodyOverride ?? newReviewBody).trim();
+
+    if (event === "REQUEST_CHANGES" && !body) {
+      setWriteError("Add review guidance before requesting changes.");
+      return;
+    }
+
+    setSubmittingReview(event);
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}/reviews?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "POST",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({ body, event }),
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to submit review.");
+      }
+
+      setReviews((current) => [...current, data]);
+      setAuthError(null);
+      if (body && bodyOverride == null) {
+        setNewReviewBody("");
+      }
+      await refreshReviewData(selectedPull.number);
+      return data;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to submit review.";
+      setWriteError(message);
+      throw new Error(message);
+    } finally {
+      setSubmittingReview(null);
+    }
+  };
+
   const getTimeline = (): TimelineEvent[] => {
     if (!selectedPull) return [];
 
     const events: TimelineEvent[] = [];
 
     commits.forEach(c => events.push({ type: 'commit', date: c.commit.author.date, data: c }));
-    comments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
-    reviewComments.forEach(c => events.push({ type: 'comment', date: c.created_at, data: c }));
+    comments.forEach(c => events.push({ type: 'issue_comment', date: c.created_at, data: c }));
+    reviewComments.forEach(c => events.push({ type: 'review_comment', date: c.created_at, data: c }));
     contentEdits.forEach((edit) => {
       if (edit.editedAt) {
         events.push({ type: "content_edit", date: edit.editedAt, data: edit });
@@ -821,7 +1343,10 @@ export default function App() {
     if (event.type === "commit") {
       return { label: "Commit", labelClass: "text-sky-500/40", dotClass: "border-sky-500/40", icon: <GitCommit className="w-2 h-2 text-sky-500" /> };
     }
-    if (event.type === "comment") {
+    if (event.type === "issue_comment") {
+      return { label: "Comment", labelClass: "text-white/20", dotClass: "border-white/10", icon: <MessageSquare className="w-2 h-2 text-white/30" /> };
+    }
+    if (event.type === "review_comment") {
       return { label: "Review Comment", labelClass: "text-white/20", dotClass: "border-white/10", icon: <MessageCircle className="w-2 h-2 text-white/30" /> };
     }
     if (event.type === "content_edit") {
@@ -882,45 +1407,52 @@ export default function App() {
       );
     }
 
-    if (event.type === "comment") {
+    if (event.type === "issue_comment" || event.type === "review_comment") {
+      const isReviewComment = event.type === "review_comment";
       return (
         <div className="space-y-4 border-l border-white/5 pl-6">
           <div className="flex items-center gap-4">
             <img src={event.data.user.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-            <p className="text-sm font-medium text-white/80">{event.data.user.login} <span className="text-[9px] uppercase tracking-widest text-white/20 ml-2">Review</span></p>
+            <p className="text-sm font-medium text-white/80">
+              {event.data.user.login}
+              <span className="text-[9px] uppercase tracking-widest text-white/20 ml-2">
+                {isReviewComment ? "Review" : "Comment"}
+              </span>
+            </p>
           </div>
           <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30">
             <ReactMarkdown>{event.data.body}</ReactMarkdown>
           </div>
-          {event.data.path && (
-            <button
-              onClick={() => {
-                const line = event.data.line || event.data.original_line;
-                const startLine = event.data.start_line || event.data.original_start_line;
-                if (event.data.path && line) {
-                  navigateToComment(event.data.path, line, startLine);
-                }
-              }}
-              className="flex items-center justify-between w-full opacity-50 hover:opacity-100 transition-opacity group/anchor"
-              title="Open in diff"
-            >
-              <div className="flex items-center gap-2 overflow-hidden">
-                {getFileIcon(event.data.path)}
-                <span className="text-[8px] font-mono truncate">{event.data.path}</span>
-                <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
-                  {getFileKindLabel(event.data.path)}
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[8px] font-mono">
-                  {formatReviewCommentLine(event.data)}
-                </span>
-                <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors group-hover/anchor:text-brand-orange">
-                  Open in Diff
-                  <ArrowRight className="w-2.5 h-2.5" />
-                </span>
-              </div>
-            </button>
+          {isReviewComment && event.data.path && (
+            <Tooltip content="Open in diff">
+              <button
+                onClick={() => {
+                  const line = event.data.line || event.data.original_line;
+                  const startLine = event.data.start_line || event.data.original_start_line;
+                  if (event.data.path && line) {
+                    navigateToComment(event.data.path, line, startLine);
+                  }
+                }}
+                className="flex items-center justify-between w-full opacity-50 hover:opacity-100 transition-opacity group/anchor"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  {getFileIcon(event.data.path)}
+                  <span className="text-[8px] font-mono truncate">{event.data.path}</span>
+                  <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                    {getFileKindLabel(event.data.path)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[8px] font-mono">
+                    {formatReviewCommentLine(event.data)}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors group-hover/anchor:text-brand-orange">
+                    Open in Diff
+                    <ArrowRight className="w-2.5 h-2.5" />
+                  </span>
+                </div>
+              </button>
+            </Tooltip>
           )}
         </div>
       );
@@ -1258,12 +1790,326 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("diff_theme", theme);
+    localStorage.setItem(LOCAL_STORAGE_THEME_KEY, theme);
   }, [theme]);
+
+  useEffect(() => {
+    const isSystemDefault =
+      defaultRepo.owner === SYSTEM_DEFAULT_REPO.owner &&
+      defaultRepo.repo === SYSTEM_DEFAULT_REPO.repo;
+
+    if (isSystemDefault) {
+      localStorage.removeItem(LOCAL_STORAGE_DEFAULT_REPO_KEY);
+      return;
+    }
+
+    localStorage.setItem(
+      LOCAL_STORAGE_DEFAULT_REPO_KEY,
+      JSON.stringify(defaultRepo),
+    );
+  }, [defaultRepo]);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
+    let active = true;
+
+    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      if (!active) return;
+      if (sessionError) {
+        setAuthError(sessionError.message);
+      } else {
+        setAuthError(null);
+      }
+      const session = data.session;
+      setAuthSession(session);
+      setAuthUser(session?.user ?? null);
+      const providerToken = session?.provider_token ?? readStoredGitHubProviderToken();
+      setGitHubProviderToken(providerToken);
+      setAuthLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      setAuthSession(session);
+      setAuthUser(session?.user ?? null);
+      setAuthError(null);
+      if (session?.provider_token) {
+        localStorage.setItem(
+          LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY,
+          session.provider_token,
+        );
+        setGitHubProviderToken(session.provider_token);
+      } else if (event === "SIGNED_OUT") {
+        localStorage.removeItem(LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY);
+        setGitHubProviderToken(null);
+      }
+      setAuthLoading(false);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    authUserIdRef.current = authUser?.id ?? null;
+  }, [authUser?.id]);
+
+  const queuePreferenceSync = useCallback(
+    (
+      userId: string,
+      syncPayload: {
+        theme?: ThemePreference;
+        default_repo_owner?: string;
+        default_repo_name?: string;
+        recent_repos?: RecentRepoPreference[];
+        saved_pulls?: SavedPullPreference[];
+      },
+    ) => {
+      const syncSequence = preferenceSyncSequenceRef.current + 1;
+      preferenceSyncSequenceRef.current = syncSequence;
+      preferenceSyncPendingCountRef.current += 1;
+      setPreferencesSyncing(true);
+
+      preferenceSyncChainRef.current = preferenceSyncChainRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const { error: preferencesError } = await upsertUserPreferences(
+            userId,
+            syncPayload,
+          );
+
+          const isCurrentUser = authUserIdRef.current === userId;
+
+          if (preferencesError && isCurrentUser) {
+            if (isMissingUserPreferencesTableError(preferencesError)) {
+              setPreferencesSetupHint(
+                "Run the Supabase preference migrations to enable sync.",
+              );
+            } else {
+              setAuthError(preferencesError.message);
+            }
+          } else if (isCurrentUser) {
+            setPreferencesSetupHint(null);
+            setAuthError(null);
+          }
+
+          preferenceSyncPendingCountRef.current = Math.max(
+            0,
+            preferenceSyncPendingCountRef.current - 1,
+          );
+
+          if (
+            isCurrentUser &&
+            syncSequence === preferenceSyncSequenceRef.current &&
+            preferenceSyncPendingCountRef.current === 0
+          ) {
+            setPreferencesSyncing(false);
+          }
+        });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!supabase || !authUser) {
+      preferencesHydratedRef.current = false;
+      suspendedCorePreferenceValueRef.current = null;
+      suspendedRecentReposValueRef.current = null;
+      suspendedSavedPullsValueRef.current = null;
+      preferenceSyncSequenceRef.current = 0;
+      preferenceSyncPendingCountRef.current = 0;
+      preferenceSyncChainRef.current = Promise.resolve();
+      setPreferencesLoading(false);
+      setPreferencesSyncing(false);
+      setPreferencesSetupHint(null);
+      setRecentRepos([]);
+      setSavedPulls([]);
+      return;
+    }
+
+    let active = true;
+    setPreferencesLoading(true);
+
+    fetchUserPreferences(authUser.id).then(({ data, error: preferencesError }) => {
+      if (!active) return;
+
+      if (preferencesError) {
+        if (isMissingUserPreferencesTableError(preferencesError)) {
+          setPreferencesSetupHint("Run the Supabase preference migrations to enable sync.");
+          preferencesHydratedRef.current = true;
+          setPreferencesLoading(false);
+          return;
+        }
+        setAuthError(preferencesError.message);
+        preferencesHydratedRef.current = true;
+        setPreferencesLoading(false);
+        return;
+      }
+
+      setPreferencesSetupHint(null);
+      setAuthError(null);
+
+      if (data) {
+        suspendedCorePreferenceValueRef.current = JSON.stringify({
+          theme: data.theme ?? theme,
+          default_repo_owner: data.default_repo_owner ?? defaultRepo.owner,
+          default_repo_name: data.default_repo_name ?? defaultRepo.repo,
+        });
+        suspendedRecentReposValueRef.current = JSON.stringify(
+          data.recent_repos ?? [],
+        );
+        suspendedSavedPullsValueRef.current = JSON.stringify(
+          data.saved_pulls ?? [],
+        );
+
+        if (data.theme && data.theme !== theme) {
+          setTheme(data.theme);
+        }
+
+        if (data.default_repo_owner && data.default_repo_name) {
+          setDefaultRepo({
+            owner: data.default_repo_owner,
+            repo: data.default_repo_name,
+          });
+        }
+
+        setRecentRepos(data.recent_repos ?? []);
+        setSavedPulls(data.saved_pulls ?? []);
+      }
+
+      preferencesHydratedRef.current = true;
+      setPreferencesLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [authUser?.id]);
+
+  useEffect(() => {
+    if (!supabase || !authUser || !preferencesHydratedRef.current) return;
+
+    const currentCoreValue = JSON.stringify({
+      theme,
+      default_repo_owner: defaultRepo.owner,
+      default_repo_name: defaultRepo.repo,
+    });
+
+    if (suspendedCorePreferenceValueRef.current != null) {
+      const shouldSkip =
+        suspendedCorePreferenceValueRef.current === currentCoreValue;
+      suspendedCorePreferenceValueRef.current = null;
+      if (shouldSkip) return;
+    }
+
+    queuePreferenceSync(authUser.id, {
+      theme,
+      default_repo_owner: defaultRepo.owner,
+      default_repo_name: defaultRepo.repo,
+    });
+  }, [authUser?.id, defaultRepo, queuePreferenceSync, theme]);
+
+  useEffect(() => {
+    if (!supabase || !authUser || !preferencesHydratedRef.current) return;
+
+    const currentRecentReposValue = JSON.stringify(recentRepos);
+    if (suspendedRecentReposValueRef.current != null) {
+      const shouldSkip =
+        suspendedRecentReposValueRef.current === currentRecentReposValue;
+      suspendedRecentReposValueRef.current = null;
+      if (shouldSkip) return;
+    }
+
+    queuePreferenceSync(authUser.id, {
+      recent_repos: recentRepos,
+    });
+  }, [authUser?.id, queuePreferenceSync, recentRepos]);
+
+  useEffect(() => {
+    if (!supabase || !authUser || !preferencesHydratedRef.current) return;
+
+    const currentSavedPullsValue = JSON.stringify(savedPulls);
+    if (suspendedSavedPullsValueRef.current != null) {
+      const shouldSkip =
+        suspendedSavedPullsValueRef.current === currentSavedPullsValue;
+      suspendedSavedPullsValueRef.current = null;
+      if (shouldSkip) return;
+    }
+
+    queuePreferenceSync(authUser.id, {
+      saved_pulls: savedPulls,
+    });
+  }, [authUser?.id, queuePreferenceSync, savedPulls]);
+
+  useEffect(() => {
+    if (!authMenuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (authMenuRef.current?.contains(event.target as Node)) return;
+      setAuthMenuOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setAuthMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [authMenuOpen]);
+
+  useEffect(() => {
+    setIsSidebarAccountOpen(true);
+  }, [authUser]);
+
+  useEffect(() => {
+    setIsSidebarRecentReposOpen(authUser ? recentRepos.length > 0 : false);
+  }, [authUser, recentRepos.length]);
+
+  useEffect(() => {
+    setIsSidebarSavedPullsOpen(authUser ? savedPulls.length > 0 : false);
+  }, [authUser, savedPulls.length]);
 
   useEffect(() => {
     repoKeyRef.current = `${currentOwner}/${currentRepo}`;
   }, [currentOwner, currentRepo]);
+
+  useEffect(() => {
+    if (!authUser) return;
+    trackRecentRepo(currentOwner, currentRepo);
+  }, [authUser?.id, currentOwner, currentRepo]);
+
+  useEffect(() => {
+    const pendingSavedPull = pendingSavedPullRef.current;
+    if (!pendingSavedPull) return;
+    if (viewMode !== "pulls") return;
+    if (pendingSavedPull.owner !== currentOwner || pendingSavedPull.repo !== currentRepo) {
+      return;
+    }
+
+    const matchingPull = pulls.find(
+      (pull) => pull.number === pendingSavedPull.pull_number,
+    );
+
+    if (matchingPull) {
+      pendingSavedPullRef.current = null;
+      handleSelectPull(matchingPull);
+    }
+  }, [pulls, viewMode, currentOwner, currentRepo]);
 
   const resetRepoState = () => {
     setRepoInfo(null);
@@ -1298,10 +2144,209 @@ export default function App() {
 
     repoKeyRef.current = `${nextOwner}/${nextRepo}`;
     resetRepoState();
+    trackRecentRepo(nextOwner, nextRepo);
     setCurrentOwner(nextOwner);
     setCurrentRepo(nextRepo);
     setError(null);
   };
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
+    window.__DIFF_E2E__ = {
+      getState: () => ({
+        authUserId: authUser?.id ?? null,
+        authEmail: authUser?.email ?? null,
+        authLoading,
+        authError,
+        preferencesLoading,
+        preferencesSyncing,
+        preferencesSetupHint,
+        theme,
+        currentOwner,
+        currentRepo,
+        defaultRepo,
+        recentReposCount: recentRepos.length,
+        savedPullsCount: savedPulls.length,
+        selectedPullNumber: selectedPull?.number ?? null,
+        loadedPullNumbers: pulls.map((pull) => pull.number),
+        loadedFilesCount: files.length,
+        loading,
+        activeTab,
+        isSidebarOpen,
+        showUpdates,
+        authMenuOpen,
+        githubWriteEnabled: Boolean(githubProviderToken),
+      }),
+      getSessionSeed: () => {
+        if (!authSession?.access_token || !authSession?.refresh_token) {
+          throw new Error("No active Supabase session seed is available.");
+        }
+        return {
+          access_token: authSession.access_token,
+          refresh_token: authSession.refresh_token,
+        };
+      },
+      getSessionSnapshot: () => {
+        if (!authSession) {
+          throw new Error("No active Supabase session snapshot is available.");
+        }
+        return authSession;
+      },
+      setSession: async (session) => {
+        if (!supabase) {
+          throw new Error("Supabase is not configured.");
+        }
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        });
+        if (sessionError) {
+          throw sessionError;
+        }
+      },
+      signOut: async () => {
+        if (!supabase) {
+          throw new Error("Supabase is not configured.");
+        }
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) {
+          throw signOutError;
+        }
+      },
+      setTheme: (nextTheme) => setTheme(nextTheme),
+      setDefaultRepo: (owner, repo) =>
+        setDefaultRepo({ owner: owner.trim(), repo: repo.trim() }),
+      switchRepo: (owner, repo) => switchRepo(owner, repo),
+      reloadPulls: async () => {
+        await fetchPulls(1, true);
+      },
+      selectPull: (number) => {
+        const targetPull = pulls.find((pull) => pull.number === number);
+        if (!targetPull) {
+          throw new Error(`Pull #${number} is not loaded.`);
+        }
+        handleSelectPull(targetPull);
+      },
+      toggleSaveSelectedPull: () => toggleSavedPull(),
+      openUpdates: () => setShowUpdates(true),
+      closeUpdates: () => setShowUpdates(false),
+      openAuthMenu: () => setAuthMenuOpen(true),
+      closeAuthMenu: () => setAuthMenuOpen(false),
+      openSidebar: () => setIsSidebarOpen(true),
+      closeSidebar: () => setIsSidebarOpen(false),
+      submitDiscussionComment: async (body) => {
+        setWriteError(null);
+        setAuthError(null);
+        await submitComment(body);
+        if (writeError || authError) {
+          throw new Error(writeError || authError || "Discussion comment failed.");
+        }
+      },
+      submitInlineReviewComment: async (body, line, startLine) => {
+        const targetFile = selectedFile ?? files[0] ?? null;
+        if (!targetFile) {
+          throw new Error("No selected diff file is available.");
+        }
+        if (!selectedFile && files[0]) {
+          setSelectedFile(files[0]);
+        }
+        const targetLines = parseDiffRows(targetFile.patch)
+          .filter(
+            (row) =>
+              row.newLine != null &&
+              row.kind !== "deleted" &&
+              row.kind !== "meta" &&
+              row.kind !== "hunk",
+          )
+          .map((row) => row.newLine as number);
+        const rangeLines = [...new Set(targetLines)].sort((a, b) => a - b);
+        const adjacentRange = rangeLines
+          .slice(1)
+          .map((lineValue, index) => ({
+            startLine: rangeLines[index],
+            line: lineValue,
+          }))
+          .find((range) => range.line === range.startLine + 1);
+        const useAutoRange = startLine === -1;
+        const targetLine =
+          line ??
+          (useAutoRange ? adjacentRange?.line : undefined) ??
+          rangeLines[0] ??
+          availableReviewLines[0];
+        const targetStartLine = useAutoRange ? adjacentRange?.startLine : startLine;
+        if (!targetLine) {
+          throw new Error("No diff line available for inline review comment.");
+        }
+        setWriteError(null);
+        setAuthError(null);
+        await submitInlineReviewComment(body, targetLine, targetStartLine, targetFile);
+        if (writeError || authError) {
+          throw new Error(writeError || authError || "Inline review comment failed.");
+        }
+      },
+      submitReviewAction: async (event, body) => {
+        setWriteError(null);
+        setAuthError(null);
+        await submitReview(event, body);
+        if (writeError || authError) {
+          throw new Error(writeError || authError || "Review submission failed.");
+        }
+      },
+      writeSessionFile: async () => {
+        const { data: sessionData, error: sessionError } = supabase
+          ? await supabase.auth.getSession()
+          : { data: { session: authSession }, error: null };
+        if (sessionError) {
+          throw sessionError;
+        }
+        const sessionSnapshot = sessionData.session ?? authSession;
+        if (!sessionSnapshot) {
+          throw new Error("No active Supabase session snapshot is available.");
+        }
+        const response = await fetch("/api/dev/e2e-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sessionSnapshot),
+        });
+        const responseData = await response.json();
+        if (!response.ok) {
+          throw new Error(responseData.error || "Failed to write e2e session file.");
+        }
+        return responseData;
+      },
+    };
+
+    return () => {
+      delete window.__DIFF_E2E__;
+    };
+  }, [
+    activeTab,
+    authLoading,
+    authError,
+    authMenuOpen,
+    authSession,
+    authUser,
+    currentOwner,
+    currentRepo,
+    defaultRepo,
+    githubProviderToken,
+    isSidebarOpen,
+    loading,
+    preferencesLoading,
+    preferencesSyncing,
+    preferencesSetupHint,
+    pulls,
+    files,
+    recentRepos.length,
+    savedPulls.length,
+    selectedPull,
+    selectedFile,
+    showUpdates,
+    theme,
+    availableReviewLines,
+    writeError,
+  ]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -1464,6 +2509,7 @@ export default function App() {
     const requestKey = `${currentOwner}/${currentRepo}`;
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
+    setError(null);
 
     try {
       const response = await fetch(
@@ -1472,6 +2518,23 @@ export default function App() {
       if (repoKeyRef.current !== requestKey) return;
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        if (response.status === 404 && repoInfo) {
+          const newPulls: PullRequest[] = reset ? [] : pulls;
+          setPulls(newPulls);
+          setHasMore(false);
+
+          if (reset) {
+            setSelectedPull(null);
+            setFiles([]);
+            setSelectedFile(null);
+            setComments([]);
+            setReviewComments([]);
+            setTimelineEvents([]);
+            setContentEdits([]);
+            setCheckSummary(null);
+          }
+          return;
+        }
         let message =
           errorData.error || `Server responded with ${response.status}`;
         if (typeof message !== "string") {
@@ -1531,6 +2594,11 @@ export default function App() {
     setSelectedPull(pull);
     setLoadingFiles(true);
     setLoadingComments(true);
+    setWriteError(null);
+    setNewReviewCommentBody("");
+    setReviewCommentLine("");
+    setReviewCommentStartLine("");
+    setNewReviewBody("");
     setFiles([]);
     setSelectedFile(null);
     setComments([]);
@@ -1657,10 +2725,11 @@ export default function App() {
 
       {/* Header */}
       <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-onyx/90 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 lg:px-12 h-14 lg:h-20 flex items-center justify-between gap-2 lg:gap-3">
+        <div className="max-w-7xl mx-auto px-4 lg:px-12 h-14 lg:h-20 flex items-center justify-between gap-2 lg:gap-2.5">
           <div className="flex items-center gap-2 lg:gap-4 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              aria-label={isSidebarOpen ? "Close navigation panel" : "Open navigation panel"}
               className="lg:hidden p-1 -ml-1 text-white/40 hover:text-brand-orange transition-colors"
             >
               <Activity
@@ -1675,7 +2744,7 @@ export default function App() {
               <div className="flex flex-col min-w-0">
                 <h1 className="text-base lg:text-xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
-                  <span className="hidden md:inline text-[7px] opacity-10 ml-3 tracking-[0.4em] font-mono">
+                  <span className="hidden lg:inline text-[7px] opacity-[0.08] ml-2.5 tracking-[0.36em] font-mono">
                     PROTOTYPE
                   </span>
                 </h1>
@@ -1683,23 +2752,24 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 lg:gap-6">
-            <div className="flex items-center gap-3 lg:gap-4">
-              <button
-                onClick={() => {
+            <div className="flex items-center gap-2.5 lg:gap-3">
+              <div className="flex items-center gap-2 lg:gap-3">
+                <button
+                  data-e2e="theme-toggle"
+                  onClick={() => {
                   const themes: ("dark" | "midnight" | "grey")[] = ["dark", "midnight", "grey"];
                   const currentIndex = themes.indexOf(theme);
                   const nextIndex = (currentIndex + 1) % themes.length;
                   setTheme(themes[nextIndex]);
                 }}
-                className="flex items-center gap-2 lg:gap-3 group p-1.5 lg:p-2 hover:bg-white/5 transition-all rounded-lg"
+                className="flex items-center gap-2 lg:gap-2.5 group p-1.5 lg:p-2 hover:bg-white/5 transition-all rounded-lg"
               >
                 <div className="flex gap-1 px-0.5">
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "dark" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "midnight" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "grey" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                 </div>
-                <div className="hidden sm:block w-[40px] lg:w-[60px] overflow-hidden">
+                <div className="hidden sm:block w-[34px] lg:w-[46px] overflow-hidden">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.span
                       key={theme}
@@ -1707,7 +2777,7 @@ export default function App() {
                       animate={{ opacity: 0.4, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       whileHover={{ opacity: 1 }}
-                      className="block text-[8px] uppercase tracking-widest font-bold text-white transition-opacity text-left text-nowrap"
+                      className="block text-[8px] uppercase tracking-[0.28em] font-bold text-white transition-opacity text-left text-nowrap"
                     >
                       {theme === "dark" ? "Onyx" : theme === "midnight" ? "Night" : "Grey"}
                     </motion.span>
@@ -1715,9 +2785,10 @@ export default function App() {
                 </div>
               </button>
 
-              <button
-                onClick={() => {
-                  setShowUpdates(true);
+                <button
+                  data-e2e="updates-open"
+                  onClick={() => {
+                    setShowUpdates(true);
                   setHasNewUpdates(false);
                 }}
                 className="relative flex items-center gap-2 lg:gap-3 transition-all group"
@@ -1727,15 +2798,153 @@ export default function App() {
                   hasNewUpdates ? "bg-brand-orange animate-pulse" : "bg-white/10 group-hover:bg-white/30"
                 )} />
                 <span className="hidden sm:inline text-[8px] uppercase tracking-[0.2em] font-medium text-white/20 group-hover:text-white/40">Updates</span>
-              </button>
-            </div>
+                </button>
+              </div>
 
-            <div className="hidden lg:flex items-center gap-12 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40">
+              <div className="relative shrink-0" ref={authMenuRef}>
+                {authUser ? (
+                  <>
+                    <button
+                      data-e2e="auth-menu-toggle"
+                      onClick={() => {
+                        setAuthMenuOpen((current) => !current);
+                        setAuthError(null);
+                      }}
+                      className="flex max-w-[168px] items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.015] px-2 py-1.5 text-left transition-colors hover:border-white/[0.08] hover:bg-white/[0.03] lg:max-w-[182px]"
+                    >
+                      {authAvatarUrl ? (
+                        <img
+                          src={authAvatarUrl}
+                          alt={authDisplayName}
+                          className="h-6 w-6 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/5 text-white/40">
+                          <User className="h-3.5 w-3.5" />
+                        </div>
+                      )}
+                      <div className="hidden min-w-0 sm:block">
+                        <div className="truncate text-[8px] font-medium uppercase tracking-[0.15em] text-white/50">
+                          {authDisplayName}
+                        </div>
+                        <div className="truncate text-[7px] uppercase tracking-[0.15em] text-white/15">
+                          {preferencesLoading ? "syncing" : authProvider}
+                        </div>
+                      </div>
+                    </button>
+
+                    <AnimatePresence>
+                      {authMenuOpen && (
+                        <motion.div
+                          data-e2e="auth-menu"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 6 }}
+                          className="absolute right-0 top-[calc(100%+10px)] w-[220px] rounded-xl border border-white/8 bg-panel/95 p-3 shadow-2xl backdrop-blur-md"
+                        >
+                          <div className="space-y-1 border-b border-white/5 pb-2.5">
+                            <div className="text-[9px] uppercase tracking-[0.24em] text-white/20">
+                              Signed in
+                            </div>
+                            <div className="truncate text-[11px] font-medium text-white/85">
+                              {authDisplayName}
+                            </div>
+                            {authUser?.email && (
+                              <div className="truncate text-[10px] text-white/35">
+                                {authUser.email}
+                              </div>
+                            )}
+                            <div className="text-[8px] uppercase tracking-[0.16em] text-white/18">
+                              {preferencesLoading ? "sync active" : "sync ready"} · {githubProviderToken ? "write enabled" : "write unavailable"}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2.5 border-b border-white/5 py-2.5">
+                            <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.2em] text-white/20">
+                              <span>Saved Pulls</span>
+                              {savedPulls.length > 0 && <span>{savedPulls.length}</span>}
+                            </div>
+                            {savedPulls.length > 0 ? (
+                              <div className="space-y-2">
+                                {savedPulls.slice(0, 3).map((pull) => (
+                                  <a
+                                    key={`${pull.owner}/${pull.repo}#${pull.pull_number}`}
+                                    href={pull.html_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block rounded-lg px-2 py-2 text-white/45 transition-colors hover:bg-white/[0.03] hover:text-white/75"
+                                  >
+                                    <div className="truncate text-[10px] font-medium">
+                                      {pull.title}
+                                    </div>
+                                    <div className="truncate text-[9px] uppercase tracking-[0.16em] text-white/20">
+                                      {pull.owner}/{pull.repo} #{pull.pull_number}
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[9px] uppercase tracking-[0.18em] text-white/20">
+                                No saved pull requests
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="pt-2.5">
+                            <button
+                              onClick={signOut}
+                              className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
+                            >
+                              Sign Out
+                              <LogOut className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </>
+                ) : (
+                  <Tooltip
+                    content={
+                      isSupabaseConfigured
+                        ? "Sign in with GitHub via Supabase"
+                        : "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable auth"
+                    }
+                  >
+                    <span className="inline-flex">
+                      <button
+                        onClick={signInWithGitHub}
+                        disabled={!isSupabaseConfigured || authLoading}
+                        className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Lock className={cn("h-3.5 w-3.5", authLoading && isSupabaseConfigured && "animate-pulse")} />
+                        <span className="hidden sm:inline">
+                          {authLoading ? "Auth" : "Sign In"}
+                        </span>
+                      </button>
+                    </span>
+                  </Tooltip>
+                )}
+
+                {preferencesSetupHint && (
+                  <div className="absolute right-0 top-[calc(100%+8px)] max-w-[260px] text-[9px] uppercase tracking-[0.18em] text-amber-300/60">
+                    {preferencesSetupHint}
+                  </div>
+                )}
+
+                {authError && !preferencesSetupHint && (
+                  <div className="absolute right-0 top-[calc(100%+8px)] max-w-[220px] text-[9px] uppercase tracking-[0.18em] text-rose-400/70">
+                    {authError}
+                  </div>
+                )}
+              </div>
+
+            <div className="hidden lg:flex items-center gap-5 text-[9px] font-medium uppercase tracking-[0.22em] text-white/22">
               <a
                 href="https://github.com/bniladridas/diff"
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-2 hover:text-white transition-colors"
+                className="flex items-center gap-1.5 hover:text-white/42 transition-colors"
               >
                 GitHub <ExternalLink className="w-3 h-3" />
               </a>
@@ -1743,7 +2952,7 @@ export default function App() {
 
             <button
               onClick={() => setIsSidebarHidden(!isSidebarHidden)}
-              className="hidden lg:flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em] text-white/40 hover:text-brand-orange transition-colors min-w-[120px] justify-end"
+              className="hidden lg:flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/22 hover:text-brand-orange/72 transition-colors min-w-[88px] justify-end"
             >
               <div className="relative h-4 w-full flex items-center justify-end">
                 <AnimatePresence mode="wait" initial={false}>
@@ -1765,7 +2974,7 @@ export default function App() {
             onClick={() =>
               viewMode === "pulls" ? fetchPulls(1, true) : fetchBranches()
             }
-            className="p-2 lg:p-3 border border-white/10 hover:border-brand-orange transition-all group shrink-0 rounded-lg"
+            className="p-2 lg:p-2.5 border border-white/[0.05] bg-white/[0.01] hover:border-white/[0.1] hover:bg-white/[0.025] transition-all group shrink-0 rounded-lg"
           >
             <RefreshCw
               className={cn(
@@ -1869,7 +3078,6 @@ export default function App() {
                             onClick={() => {
                               const newDefault = { owner: currentOwner, repo: currentRepo };
                               setDefaultRepo(newDefault);
-                              localStorage.setItem("diff_default_repo", JSON.stringify(newDefault));
                             }}
                             className="px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-white/30 hover:text-white/70 transition-colors shrink-0 border border-white/5 rounded-md"
                           >
@@ -1887,23 +3095,174 @@ export default function App() {
                       )}
 
                       {(defaultRepo.owner !== SYSTEM_OWNER || defaultRepo.repo !== SYSTEM_REPO) && (
-                         <button
-                         onClick={() => {
-                           const systemDefault = { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
-                           setDefaultRepo(systemDefault);
-                           localStorage.removeItem("diff_default_repo");
-                           switchRepo(SYSTEM_OWNER, SYSTEM_REPO);
-                         }}
-                         className="px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-rose-400/60 hover:text-rose-300 transition-colors shrink-0 border border-rose-500/10 rounded-md"
-                         title="Clear custom default and reset to system default"
-                       >
-                         Clear
-                       </button>
+                        <Tooltip content="Clear custom default and reset to system default">
+                          <button
+                            onClick={() => {
+                              const systemDefault = { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
+                              setDefaultRepo(systemDefault);
+                              switchRepo(SYSTEM_OWNER, SYSTEM_REPO);
+                            }}
+                            className="px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-rose-400/60 hover:text-rose-300 transition-colors shrink-0 border border-rose-500/10 rounded-md"
+                          >
+                            Clear
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   </div>
                 )}
               </div>
+
+              {isSupabaseConfigured && (
+                <div data-e2e="sidebar-account" className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarAccountOpen((current) => !current)}
+                    className="flex w-full items-center justify-between text-left"
+                    aria-expanded={isSidebarAccountOpen}
+                  >
+                    <div className="text-[8px] uppercase tracking-[0.24em] text-white/20">
+                      Account
+                    </div>
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 text-white/20 transition-transform",
+                        isSidebarAccountOpen && "rotate-90",
+                      )}
+                    />
+                  </button>
+                  {isSidebarAccountOpen &&
+                    (authUser ? (
+                      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/15 px-3 py-2.5">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          {authAvatarUrl ? (
+                            <img
+                              src={authAvatarUrl}
+                              alt={authDisplayName}
+                              className="h-7 w-7 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-white/35">
+                              <User className="h-3.5 w-3.5" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="truncate text-[9px] font-medium uppercase tracking-[0.16em] text-white/60">
+                              {authDisplayName}
+                            </div>
+                            <div className="truncate text-[8px] uppercase tracking-[0.16em] text-white/18">
+                              {savedPulls.length} saved · {githubProviderToken ? "write enabled" : "read only"}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={signOut}
+                          className="shrink-0 rounded-md border border-white/5 px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-white/30 transition-colors hover:border-white/10 hover:text-white/60"
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={signInWithGitHub}
+                        disabled={authLoading}
+                        className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-black/15 px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <div>
+                          <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-white/50">
+                            Sign in with GitHub
+                          </div>
+                          <div className="text-[8px] uppercase tracking-[0.16em] text-white/18">
+                            Sync settings and discussion actions
+                          </div>
+                        </div>
+                        <Lock className="h-3.5 w-3.5 text-white/30" />
+                      </button>
+                    ))}
+                </div>
+              )}
+
+              {authUser && recentRepos.length > 0 && (
+                <div data-e2e="sidebar-saved-pulls" className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarRecentReposOpen((current) => !current)}
+                    className="flex w-full items-center justify-between text-left"
+                    aria-expanded={isSidebarRecentReposOpen}
+                  >
+                    <div className="text-[8px] uppercase tracking-[0.24em] text-white/20">
+                      Recent Repos
+                    </div>
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 text-white/20 transition-transform",
+                        isSidebarRecentReposOpen && "rotate-90",
+                      )}
+                    />
+                  </button>
+                  {isSidebarRecentReposOpen && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {recentRepos.slice(0, 4).map((entry) => {
+                        const isActive =
+                          entry.owner === currentOwner && entry.repo === currentRepo;
+                        return (
+                          <button
+                            key={`${entry.owner}/${entry.repo}`}
+                            onClick={() => switchRepo(entry.owner, entry.repo)}
+                            className={cn(
+                              "rounded-md border px-2 py-1 text-[8px] uppercase tracking-[0.16em] transition-colors",
+                              isActive
+                                ? "border-white/10 bg-white/[0.04] text-white/70"
+                                : "border-white/5 text-white/30 hover:border-white/10 hover:text-white/55",
+                            )}
+                          >
+                            {entry.owner}/{entry.repo}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {authUser && savedPulls.length > 0 && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarSavedPullsOpen((current) => !current)}
+                    className="flex w-full items-center justify-between text-left"
+                    aria-expanded={isSidebarSavedPullsOpen}
+                  >
+                    <div className="text-[8px] uppercase tracking-[0.24em] text-white/20">
+                      Saved Pulls
+                    </div>
+                    <ChevronRight
+                      className={cn(
+                        "h-3.5 w-3.5 text-white/20 transition-transform",
+                        isSidebarSavedPullsOpen && "rotate-90",
+                      )}
+                    />
+                  </button>
+                  {isSidebarSavedPullsOpen && (
+                    <div className="space-y-1.5">
+                      {savedPulls.slice(0, 4).map((savedPull) => (
+                        <button
+                          key={`${savedPull.owner}/${savedPull.repo}#${savedPull.pull_number}`}
+                          onClick={() => openSavedPull(savedPull)}
+                          className="w-full rounded-xl border border-white/5 bg-black/15 px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02]"
+                        >
+                          <div className="truncate text-[9px] font-medium text-white/55">
+                            {savedPull.title}
+                          </div>
+                          <div className="truncate pt-1 text-[8px] uppercase tracking-[0.16em] text-white/18">
+                            {savedPull.owner}/{savedPull.repo} #{savedPull.pull_number}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-2 border border-white/5 bg-black/20 rounded-xl p-1">
                 <button
@@ -2164,21 +3523,26 @@ export default function App() {
               isResizing && "bg-brand-orange/60",
             )}
           />
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsSidebarHidden(!isSidebarHidden);
-            }}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7 h-14 rounded-full border border-white/10 bg-panel/95 backdrop-blur-sm flex items-center justify-center text-white/30 hover:text-white/70 hover:border-white/20 transition-all"
-            title={isSidebarHidden ? "Show panel" : "Hide panel"}
+          <Tooltip
+            content={isSidebarHidden ? "Show panel" : "Hide panel"}
+            wrapperClassName="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+            side="right"
           >
-            <ChevronRight
-              className={cn(
-                "w-3.5 h-3.5 transition-transform",
-                isSidebarHidden ? "rotate-0" : "rotate-180",
-              )}
-            />
-          </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsSidebarHidden(!isSidebarHidden);
+              }}
+              className="w-7 h-14 rounded-full border border-white/10 bg-panel/95 backdrop-blur-sm flex items-center justify-center text-white/30 hover:text-white/70 hover:border-white/20 transition-all"
+            >
+              <ChevronRight
+                className={cn(
+                  "w-3.5 h-3.5 transition-transform",
+                  isSidebarHidden ? "rotate-0" : "rotate-180",
+                )}
+              />
+            </button>
+          </Tooltip>
         </div>
 
         {/* Diff Content View */}
@@ -2225,6 +3589,26 @@ export default function App() {
                                 <ChevronRight className="w-2.5 h-2.5 opacity-40" />
                                 <span className="text-brand-orange/60">{selectedPull.head.ref}</span>
                               </div>
+                            )}
+                            {authUser && (
+                              <button
+                                data-e2e="save-pull-toggle"
+                                onClick={toggleSavedPull}
+                                className={cn(
+                                  "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[8px] uppercase tracking-[0.18em] transition-colors",
+                                  selectedPullIsSaved
+                                    ? "border-brand-orange/20 bg-brand-orange/[0.06] text-brand-orange/70"
+                                    : "border-white/5 text-white/30 hover:border-white/10 hover:text-white/55",
+                                )}
+                              >
+                                <Bookmark
+                                  className={cn(
+                                    "h-3 w-3",
+                                    selectedPullIsSaved && "fill-current",
+                                  )}
+                                />
+                                {selectedPullIsSaved ? "Saved" : "Save"}
+                              </button>
                             )}
                           </div>
                         )}
@@ -2731,6 +4115,176 @@ export default function App() {
                           </ReactMarkdown>
                         </div>
                       </section>
+
+                      {selectedPull && authUser && (
+                        <section className="space-y-8 border-b border-white/5 pb-8">
+                          <div className="space-y-4 border-b border-white/5 pb-8">
+                            <div className="flex items-center justify-between gap-4">
+                              <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
+                                Review
+                              </h3>
+                              {!githubProviderToken && (
+                                <span className="text-[9px] uppercase tracking-[0.18em] text-amber-300/55">
+                                  Refresh sign-in to restore GitHub write token
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="space-y-3 border-l border-white/5 pl-8">
+                              <textarea
+                                value={newReviewBody}
+                                onChange={(event) => setNewReviewBody(event.target.value)}
+                                placeholder="Add a review summary"
+                                className="min-h-[96px] w-full resize-y rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                              />
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <button
+                                  onClick={() => submitReview("COMMENT")}
+                                  disabled={submittingReview !== null || !githubProviderToken}
+                                  className="inline-flex items-center gap-2 rounded-lg border border-white/8 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/40 transition-colors hover:border-white/15 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-35"
+                                >
+                                  {submittingReview === "COMMENT" ? "Submitting" : "Comment"}
+                                </button>
+                                <button
+                                  onClick={() => submitReview("APPROVE")}
+                                  disabled={submittingReview !== null || !githubProviderToken}
+                                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/12 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-emerald-400/60 transition-colors hover:border-emerald-500/22 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-35"
+                                >
+                                  {submittingReview === "APPROVE" ? "Submitting" : "Approve"}
+                                </button>
+                                <button
+                                  onClick={() => submitReview("REQUEST_CHANGES")}
+                                  disabled={
+                                    submittingReview !== null ||
+                                    !githubProviderToken ||
+                                    !newReviewBody.trim()
+                                  }
+                                  className="inline-flex items-center gap-2 rounded-lg border border-rose-500/12 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-rose-400/60 transition-colors hover:border-rose-500/22 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-35"
+                                >
+                                  {submittingReview === "REQUEST_CHANGES"
+                                    ? "Submitting"
+                                    : "Request Changes"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-4">
+                            <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
+                              Reply
+                            </h3>
+                          </div>
+                          <div className="space-y-3 border-l border-white/5 pl-8">
+                            <textarea
+                              value={newCommentBody}
+                              onChange={(event) => setNewCommentBody(event.target.value)}
+                              placeholder="Add a pull request comment"
+                              className="min-h-[120px] w-full resize-y rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                            />
+                            <div className="flex items-center justify-end">
+                                <button
+                                  onClick={() => submitComment()}
+                                disabled={
+                                  submittingComment ||
+                                  !githubProviderToken ||
+                                  !newCommentBody.trim()
+                                }
+                                className="inline-flex items-center gap-2 rounded-lg border border-white/8 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/40 transition-colors hover:border-brand-orange/20 hover:text-brand-orange disabled:cursor-not-allowed disabled:opacity-35"
+                              >
+                                {submittingComment ? "Publishing" : "Publish Comment"}
+                                <ArrowRight className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4 border-t border-white/5 pt-8">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
+                                  Inline Review Comment
+                                </h3>
+                                <p className="pt-2 text-[10px] text-white/22">
+                                  Anchor a comment to the currently selected diff file.
+                                </p>
+                              </div>
+                              {selectedFile && (
+                                <span className="text-[9px] font-mono text-white/20">
+                                  {selectedFile.filename}
+                                </span>
+                              )}
+                            </div>
+                            <div className="space-y-3 border-l border-white/5 pl-8">
+                              {selectedFile ? (
+                                <>
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={reviewCommentLine}
+                                      onChange={(event) =>
+                                        setReviewCommentLine(event.target.value)
+                                      }
+                                      placeholder="Target line"
+                                      className="rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                                    />
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={reviewCommentStartLine}
+                                      onChange={(event) =>
+                                        setReviewCommentStartLine(event.target.value)
+                                      }
+                                      placeholder="Start line (optional range)"
+                                      className="rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                                    />
+                                  </div>
+                                  <textarea
+                                    value={newReviewCommentBody}
+                                    onChange={(event) =>
+                                      setNewReviewCommentBody(event.target.value)
+                                    }
+                                    placeholder="Add an inline review comment"
+                                    className="min-h-[120px] w-full resize-y rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                                  />
+                                  {availableReviewLines.length > 0 && (
+                                    <div className="text-[9px] font-mono text-white/20">
+                                      Available diff lines: {availableReviewLines[0]}-{availableReviewLines[availableReviewLines.length - 1]}
+                                    </div>
+                                  )}
+                                  <div className="flex items-center justify-end">
+                                    <button
+                                      onClick={() => submitInlineReviewComment()}
+                                      disabled={
+                                        submittingReviewComment ||
+                                        !githubProviderToken ||
+                                        !selectedPull?.head?.sha ||
+                                        !newReviewCommentBody.trim() ||
+                                        !reviewCommentLine.trim()
+                                      }
+                                      className="inline-flex items-center gap-2 rounded-lg border border-white/8 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/40 transition-colors hover:border-brand-orange/20 hover:text-brand-orange disabled:cursor-not-allowed disabled:opacity-35"
+                                    >
+                                      {submittingReviewComment
+                                        ? "Publishing"
+                                        : "Publish Review Comment"}
+                                      <ArrowRight className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-[9px] uppercase tracking-[0.18em] text-white/20">
+                                  Select a diff file first.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {writeError && (
+                            <div className="text-[9px] uppercase tracking-[0.18em] text-rose-400/70">
+                              {writeError}
+                            </div>
+                          )}
+                        </section>
+                      )}
 
                       {/* General Comments */}
                       {comments.length > 0 && (
@@ -3274,9 +4828,9 @@ export default function App() {
             ) : (
               <div className="min-h-[400px] flex items-center justify-center p-12">
                 {!loading && (
-                  <div className="text-center space-y-6 max-w-sm px-12">
-                    <Code className="w-12 h-12 text-brand-orange/20 mx-auto" />
-                    <p className="text-[10px] uppercase tracking-[0.5em] text-white/20 font-black leading-loose">
+                  <div className="text-center space-y-4 max-w-sm px-12">
+                    <FileCode className="w-8 h-8 text-white/16 mx-auto" />
+                    <p className="text-[10px] uppercase tracking-[0.42em] text-white/18 font-medium leading-loose">
                       Select an item to inspect the diff.
                     </p>
                   </div>
@@ -3299,6 +4853,7 @@ export default function App() {
               className="absolute inset-0 bg-black/80 backdrop-blur-xl"
             />
             <motion.div
+              data-e2e="updates-modal"
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -3333,12 +4888,12 @@ export default function App() {
                       <div
                         key={update.version}
                         className={cn(
-                          "py-4 sm:py-5 space-y-2.5",
+                          "py-3.5 sm:py-5 space-y-2",
                           idx !== releasedUpdates.length - 1 && "border-b border-white/5",
                         )}
                       >
                         <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0 space-y-1">
+                          <div className="min-w-0 space-y-0.5">
                             <div className="flex items-center gap-2.5">
                               <span className="text-[10px] font-mono text-white/20">
                                 {update.version}
@@ -3352,14 +4907,9 @@ export default function App() {
                               {update.description}
                             </p>
                           </div>
-                          {update.date && (
-                            <span className="text-[9px] font-mono text-white/10 shrink-0 pt-0.5">
-                              {update.date}
-                            </span>
-                          )}
                         </div>
 
-                        <div className="grid grid-cols-1 gap-1.5">
+                        <div className="grid grid-cols-1 gap-1">
                           {update.details.map((detail, dIdx) => (
                             <div key={dIdx} className="flex items-start gap-3">
                               <div className="mt-1.5 w-1 h-px bg-white/10 shrink-0" />
@@ -3422,16 +4972,6 @@ export default function App() {
                     </div>
                   </section>
                 )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="px-4 py-3 sm:px-6 lg:px-8 border-t border-white/5 flex items-center justify-between bg-black/5">
-                <span className="text-[9px] uppercase tracking-[0.24em] font-medium text-white/15">
-                  Local changelog
-                </span>
-                <span className="text-[9px] font-mono text-white/10">
-                  {releasedUpdates[0]?.date ?? "draft"}
-                </span>
               </div>
             </motion.div>
           </div>

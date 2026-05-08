@@ -1,11 +1,19 @@
+<!-- SPDX-License-Identifier: LicenseRef-DIFF -->
+
 # DIFF
 
-DIFF is a specialized software utility focused on the exploration and review of pull requests. The application prioritizes a clean and distraction-free interface to facilitate the thorough examination of code changes and their associated discussions.
+DIFF is a focused interface for reading pull requests without the surrounding noise that usually comes with hosted forge UIs. It pulls live repository data from GitHub, renders diffs and review history in a denser workspace, and keeps discussion, checks, and timeline state close to the code that matters. The product is deliberately work-first: a resizable navigation panel on the left, a single review surface on the right, and minimal chrome around the core review flow.
 
-The system architecture leverages a React frontend styled with Tailwind CSS to maintain a high level of visual density and professional rigor. It integrates directly with the GitHub API to retrieve pull request metadata and file diffs in real time. Syntax highlighting is handled to ensure that diffs are legible and accurate across various programming languages. The user interface features a dual-pane design with a resizable sidebar for navigation and a main workspace for deep code analysis.
+The application is built as a React frontend with Tailwind-driven styling and a small Node server that brokers GitHub API access. Supabase-backed auth and saved user state are also supported, with GitHub-backed sign-in used for authenticated review actions.
 
-The project incorporates a robust continuous integration pipeline and pre-commit hooks to maintain strict type safety and formatting standards. Every design decision serves the primary goal of providing a high-performance environment for developers who require a focused view of the evolving codebase.
+Authenticated GitHub writes require the GitHub OAuth App to be authorized by the signed-in user, and organization-owned repositories may also require that organization's OAuth App access approval.
 
-## Disclaimer
+Setup and operational detail live in dedicated docs:
 
-This application is provided as is without any local or global warranty. It is a specialized tool intended for browser-based code review and does not represent an official product of any associated repository owners. Users are responsible for their own environment configurations and the security of any sensitive data accessed during their sessions.
+- [docs/auth/supabase-github.md](docs/auth/supabase-github.md) for Supabase and GitHub OAuth configuration
+- [supabase/migrations/20260508_create_user_preferences.sql](supabase/migrations/20260508_create_user_preferences.sql) and [supabase/migrations/20260508_extend_user_preferences_saved_state.sql](supabase/migrations/20260508_extend_user_preferences_saved_state.sql) for the backing preference schema
+- [.codex/README.md](.codex/README.md) for repo-local release and workflow notes
+
+For authenticated local verification, the browser-side e2e flow is also documented in [docs/auth/supabase-github.md](docs/auth/supabase-github.md), including how to seed a real Supabase session into `npm run check:e2e`.
+
+DIFF is a specialized browser-based code review tool and is not an official product of any repository owner whose data it reads. Users are responsible for their own environment configuration and any sensitive credentials used during local development.

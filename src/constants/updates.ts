@@ -1,6 +1,5 @@
 export interface AppUpdate {
   version: string;
-  date?: string;
   title: string;
   description: string;
   category: 'feature' | 'improvement' | 'fix' | 'planned';
@@ -9,73 +8,76 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.3.0",
+    title: "Supabase Auth & User State",
+    description: "Added sign-in, saved user state, authenticated review actions, and auth checks.",
+    category: "feature",
+    details: [
+      "GitHub sign-in with Supabase",
+      "Saved theme and default repo",
+      "Recent repos and saved pull requests",
+      "PR discussion comments with user auth",
+      "Inline review comments and review decisions",
+      "Server-side Supabase validation for write actions",
+      "Authenticated shell and app checks"
+    ]
+  },
+  {
     version: "0.2.2",
-    date: "2026-05-07",
     title: "Mobile History & Changelog Polish",
-    description: "Tightened mobile tab behavior and aligned changelog metadata with released tags.",
+    description: "Cleaned up mobile tabs and the updates surface.",
     category: "fix",
     details: [
-      "Mobile tab labels and counts render cleanly on narrow screens",
-      "History navigation and checks UI alignment refinements",
-      "Changelog dates normalized to GitHub release publish dates",
-      "Local tags synced with the remote release line"
+      "Mobile tabs read cleanly on narrow screens",
+      "History and checks alignment cleanup",
+      "Local tags synced with the release line"
     ]
   },
   {
     version: "0.2.1",
-    date: "2026-05-07",
     title: "History, Checks & Navigation Refinements",
-    description: "Corrected timeline behavior, check surfaces, and diff navigation feedback.",
+    description: "Improved timeline behavior, checks, and diff navigation.",
     category: "fix",
     details: [
-      "PR timeline cleanup with duplicate-event fixes",
-      "PR description edit history rendering from user content edits",
-      "Checks tab split from review with corrected check counts",
-      "Merge conflict state surfaced in checks",
-      "Single-line and multi-line diff jump highlighting",
-      "Lower-noise checks and modal UI refinements"
+      "Timeline cleanup and duplicate-event fixes",
+      "Checks split out from review",
+      "Single-line and range diff highlights",
+      "Quieter checks and modal UI"
     ]
   },
   {
     version: "0.2.0",
-    date: "2026-05-07",
     title: "Review API & CI Surfaces",
-    description: "Expanded review data, checks, timeline views, and rendering fixes.",
+    description: "Added deeper review data, checks, and timeline views.",
     category: "feature",
     details: [
       "Review API and timeline integration",
-      "Checks, annotations, and CI run detail surfaces",
-      "Markdown and embedded HTML rendering fixes",
-      "Discussion and annotation rendering cleanup"
+      "Checks, annotations, and CI run detail views",
+      "Markdown and embedded HTML fixes"
     ]
   },
   {
     version: "0.1.2",
-    date: "2026-05-07",
     title: "Theme Switch & UI Cleanup",
-    description: "Added theme controls and refined the visual system.",
+    description: "Added theme controls and cleaned up the interface.",
     category: "improvement",
     details: [
       "Theme switching across interface surfaces",
-      "General UI polish and layout cleanup",
-      "Lower-noise presentation refinements"
+      "Lower-noise presentation pass"
     ]
   },
   {
     version: "0.1.1",
-    date: "2026-05-07",
     title: "Checks, Navigation & App Flow",
-    description: "Added repo flow improvements and deeper GitHub integration.",
+    description: "Improved repo flow and added deeper GitHub integration.",
     category: "feature",
     details: [
       "GitHub checks integration",
-      "Active navigation and app-flow improvements",
-      "Performance and loading behavior cleanup"
+      "Navigation and app-flow improvements"
     ]
   },
   {
     version: "0.1.0",
-    date: "2026-05-06",
     title: "Core Diff Engine",
     description: "Foundational review interface.",
     category: "feature",
@@ -92,8 +94,6 @@ export const APP_UPDATES: AppUpdate[] = [
     description: "Next steps for the platform.",
     category: "planned",
     details: [
-      "Write access for comments and reviews",
-      "Full OAuth authentication flow",
       "Live updates via WebSockets",
       "Global full-text search across diffs",
       "Repository-wide code exploration"

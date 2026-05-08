@@ -1,0 +1,67 @@
+---
+name: App Check
+
+"on":
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GITHUB_REPO_OWNER: harpertoken
+      GITHUB_REPO_NAME: harper
+      DIFF_BASE_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start app server
+        run: |
+          npm run dev > /tmp/diff-app.log 2>&1 &
+          echo $! > /tmp/diff-app.pid
+
+      - name: Wait for app
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000 > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to start"
+          cat /tmp/diff-app.log
+          exit 1
+
+      - name: Route and performance check
+        run: npm run check:app
+
+      - name: Browser shell check
+        run: npm run check:e2e
+
+      - name: Stop app server
+        if: always()
+        run: |
+          if [ -f /tmp/diff-app.pid ]; then
+            kill "$(cat /tmp/diff-app.pid)" || true
+          fi
+
+      - name: Dump app log on failure
+        if: failure()
+        run: cat /tmp/diff-app.log

@@ -1,0 +1,14 @@
+# Default ownership
+* @bniladridas
+
+# Automation and release flow
+/.github/ @bniladridas
+
+# Auth and data schema
+/supabase/ @bniladridas
+
+# Operational docs
+/docs/ @bniladridas
+
+# Verification tooling
+/scripts/ @bniladridas
