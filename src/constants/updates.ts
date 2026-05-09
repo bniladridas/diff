@@ -8,6 +8,19 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.3.1",
+    title: "State & Interface Refinements",
+    description: "Tightened saved state behavior, timeline layout, and account utilities.",
+    category: "improvement",
+    details: [
+      "Saved pulls open directly without changing stream order",
+      "Recent repo cleanup moved into the account menu",
+      "Mobile history rows wrap long labels and branch names",
+      "Graphite theme added to the theme cycle",
+      "Quieter tooltips and inline history actions"
+    ]
+  },
+  {
     version: "0.3.0",
     title: "Supabase Auth & User State",
     description: "Added sign-in, saved user state, authenticated review actions, and auth checks.",

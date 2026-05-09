@@ -25,7 +25,7 @@ interface E2EState {
   preferencesLoading: boolean;
   preferencesSyncing: boolean;
   preferencesSetupHint: string | null;
-  theme: "dark" | "midnight" | "grey";
+  theme: "dark" | "midnight" | "grey" | "graphite";
   currentOwner: string;
   currentRepo: string;
   defaultRepo: { owner: string; repo: string };
@@ -356,8 +356,8 @@ async function verifyDesktopFlow(context: BrowserContext) {
   );
   assertPass("session-persist", Boolean(state.authUserId), "session persisted after reload");
 
-  const nextTheme =
-    state.theme === "dark" ? "midnight" : state.theme === "midnight" ? "grey" : "dark";
+  const themeCycle: E2EState["theme"][] = ["dark", "midnight", "grey", "graphite"];
+  const nextTheme = themeCycle[(themeCycle.indexOf(state.theme) + 1) % themeCycle.length];
   await bridge(page, "setTheme", nextTheme);
   await waitForState(page, (current) => current.theme === nextTheme);
   assertPass(

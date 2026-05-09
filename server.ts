@@ -221,6 +221,20 @@ async function startServer() {
     }
   });
 
+  app.get("/api/pulls/:number", async (req, res) => {
+    try {
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const response = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
+        { headers: getHeaders("application/vnd.github.v3+json") },
+      );
+      res.json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "Pull");
+    }
+  });
+
   app.get("/api/pulls/:number/diff", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
@@ -695,9 +709,9 @@ async function startServer() {
 
       res.json({
         ...runDetail.data,
+        steps: mergedSteps,
         ...(actionJobData
           ? {
-              steps: mergedSteps,
               runner_name: actionJobData.runner_name,
               labels: actionJobData.labels,
               started_at: actionJobData.started_at || runDetail.data.started_at,

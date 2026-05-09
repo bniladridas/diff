@@ -1,9 +1,10 @@
 ## Repo Notes
 
-Last updated: 2026-05-08
+Last updated: 2026-05-09
 
 This repository now treats the release line as:
 
+- `v0.3.1` State & Interface Refinements
 - `v0.3.0` Supabase Auth & User State
 - `v0.2.2` Mobile History & Changelog Polish
 - `v0.2.1` History, Checks & Navigation Refinements
@@ -20,11 +21,11 @@ Supabase auth expects `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the lo
 
 Supabase GitHub login in this repo uses a GitHub OAuth App, not a GitHub App. The callback URL registered in GitHub must be the Supabase auth callback for the project.
 
-Per-user app state currently syncs through `public.user_preferences`, defined in `supabase/migrations/20260508_create_user_preferences.sql` and extended in `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`.
+Per-user app state currently syncs through `public.user_preferences`, defined in `supabase/migrations/20260508_create_user_preferences.sql`, extended in `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`, and updated for the graphite theme constraint in `supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql`.
 
-The current GitHub write path uses the Supabase GitHub provider token with `repo read:user user:email` scopes and only covers pull request discussion comments.
+The current GitHub write path uses the Supabase GitHub provider token with `repo read:user user:email` scopes and covers pull request discussion comments, inline review comments, and review submission.
 
-The authenticated browser verifier uses `window.__DIFF_E2E__` in dev mode. `getSessionSnapshot()` is the stable input for `DIFF_E2E_SESSION_JSON` when running `npm run check:e2e`.
+The authenticated browser verifier uses `window.__DIFF_E2E__` in dev mode. Prefer `writeSessionFile()` to write `/tmp/diff-session.json` and run with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json`; `DIFF_E2E_SESSION_JSON` remains available when a file cannot be used.
 
 If a seeded e2e run skips `signed-out-fallback`, that is expected. Snapshot seeding is meant to rehydrate auth on reload, so full signed-out reload verification still requires a manual or OAuth-driven session path.
 

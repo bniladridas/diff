@@ -11,7 +11,7 @@ Authenticated GitHub writes require the GitHub OAuth App to be authorized by the
 Setup and operational detail live in dedicated docs:
 
 - [docs/auth/supabase-github.md](docs/auth/supabase-github.md) for Supabase and GitHub OAuth configuration
-- [supabase/migrations/20260508_create_user_preferences.sql](supabase/migrations/20260508_create_user_preferences.sql) and [supabase/migrations/20260508_extend_user_preferences_saved_state.sql](supabase/migrations/20260508_extend_user_preferences_saved_state.sql) for the backing preference schema
+- [supabase/migrations/20260508_create_user_preferences.sql](supabase/migrations/20260508_create_user_preferences.sql), [supabase/migrations/20260508_extend_user_preferences_saved_state.sql](supabase/migrations/20260508_extend_user_preferences_saved_state.sql), and [supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql](supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql) for the backing preference schema
 - [.codex/README.md](.codex/README.md) for repo-local release and workflow notes
 
 For authenticated local verification, the browser-side e2e flow is also documented in [docs/auth/supabase-github.md](docs/auth/supabase-github.md), including how to seed a real Supabase session into `npm run check:e2e`.

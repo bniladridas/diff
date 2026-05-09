@@ -23,7 +23,7 @@ export function isMissingUserPreferencesTableError(error: { code?: string; messa
   );
 }
 
-export type ThemePreference = "dark" | "midnight" | "grey";
+export type ThemePreference = "dark" | "midnight" | "grey" | "graphite";
 
 export interface RecentRepoPreference {
   owner: string;

@@ -17,6 +17,11 @@
   --panel: #262626;
 }
 
+[data-theme='graphite'] {
+  --onyx: #38383d;
+  --panel: #3f3f44;
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;

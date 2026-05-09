@@ -11,12 +11,13 @@ VITE_SUPABASE_URL=your-supabase-project-url
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
 
-The preference schema is required. Apply both migrations to the same Supabase project referenced by the local environment:
+The preference schema is required. Apply all migrations to the same Supabase project referenced by the local environment:
 
 - [../../supabase/migrations/20260508_create_user_preferences.sql](../../supabase/migrations/20260508_create_user_preferences.sql)
 - [../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql](../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql)
+- [../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql](../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql)
 
-The first migration creates `public.user_preferences`, enables row-level security, and limits reads and writes to the authenticated owner of each row. The second migration adds JSONB columns for recent repositories and saved pull requests.
+The first migration creates `public.user_preferences`, enables row-level security, and limits reads and writes to the authenticated owner of each row. The second migration adds JSONB columns for recent repositories and saved pull requests. The third migration extends the theme constraint for the graphite theme.
 
 On the GitHub side, create a GitHub OAuth App rather than a GitHub App. In Supabase, open `Authentication` and then `Providers`, expand the GitHub provider, and copy the callback URL shown there. The OAuth App in GitHub should use your app URL as the homepage URL and the Supabase callback URL as the authorization callback URL. Once the OAuth App is created, copy its client ID and client secret into the Supabase GitHub provider settings and save them.
 
@@ -30,7 +31,7 @@ For repositories owned by an organization, the signed-in user must authorize the
 
 ## Troubleshooting
 
-If the app signs in successfully but shows a preferences sync error such as `public.user_preferences` missing from the schema cache, the Supabase project does not yet have the required schema. Apply both migrations listed above to the same project referenced by `VITE_SUPABASE_URL`, then refresh the app and sign in again if needed.
+If the app signs in successfully but shows a preferences sync error such as `public.user_preferences` missing from the schema cache, or a theme constraint error after switching themes, the Supabase project does not yet have the required schema. Apply the migrations listed above to the same project referenced by `VITE_SUPABASE_URL`, then refresh the app and sign in again if needed.
 
 The browser e2e verifier supports authenticated runs by seeding a real Supabase session from the running app. In local development, sign in normally and use the dev bridge in the browser console:
 

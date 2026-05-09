@@ -67,6 +67,7 @@ import {
   Layout,
   LogOut,
   Bookmark,
+  Trash2,
 } from "lucide-react";
 import { cn } from "./lib/utils";
 import {
@@ -422,7 +423,7 @@ function Tooltip({
       {children}
       <span
         className={cn(
-          "pointer-events-none absolute z-[80] whitespace-nowrap rounded-[18px] border border-white/8 bg-panel px-4 py-2 text-[11px] font-medium tracking-[0.01em] text-white opacity-0 shadow-[0_12px_30px_rgba(0,0,0,0.32)] transition-[opacity,transform] duration-150 ease-out group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
+          "pointer-events-none absolute z-[80] whitespace-nowrap rounded-[18px] border border-white/12 bg-panel px-4 py-2 text-[11px] font-medium tracking-[0.01em] text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.18)] opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
           tooltipClassName,
         )}
       >
@@ -879,6 +880,7 @@ export default function App() {
   const preferenceSyncPendingCountRef = useRef(0);
   const authUserIdRef = useRef<string | null>(null);
   const pendingSavedPullRef = useRef<SavedPullPreference | null>(null);
+  const pendingSavedPullLoadRef = useRef<string | null>(null);
   const diffRows = parseDiffRows(selectedFile?.patch);
   const releasedUpdates = APP_UPDATES.filter((update) => update.category !== "planned");
   const plannedUpdates = APP_UPDATES.filter((update) => update.category === "planned");
@@ -991,6 +993,11 @@ export default function App() {
 
       return next.slice(0, MAX_RECENT_REPOS);
     });
+  };
+
+  const clearRecentRepos = () => {
+    setRecentRepos([]);
+    setIsSidebarRecentReposOpen(false);
   };
 
   const toggleSavedPull = () => {
@@ -1424,35 +1431,33 @@ export default function App() {
             <ReactMarkdown>{event.data.body}</ReactMarkdown>
           </div>
           {isReviewComment && event.data.path && (
-            <Tooltip content="Open in diff">
-              <button
-                onClick={() => {
-                  const line = event.data.line || event.data.original_line;
-                  const startLine = event.data.start_line || event.data.original_start_line;
-                  if (event.data.path && line) {
-                    navigateToComment(event.data.path, line, startLine);
-                  }
-                }}
-                className="flex items-center justify-between w-full opacity-50 hover:opacity-100 transition-opacity group/anchor"
-              >
-                <div className="flex items-center gap-2 overflow-hidden">
-                  {getFileIcon(event.data.path)}
-                  <span className="text-[8px] font-mono truncate">{event.data.path}</span>
-                  <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
-                    {getFileKindLabel(event.data.path)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-[8px] font-mono">
-                    {formatReviewCommentLine(event.data)}
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors group-hover/anchor:text-brand-orange">
-                    Open in Diff
-                    <ArrowRight className="w-2.5 h-2.5" />
-                  </span>
-                </div>
-              </button>
-            </Tooltip>
+            <button
+              onClick={() => {
+                const line = event.data.line || event.data.original_line;
+                const startLine = event.data.start_line || event.data.original_start_line;
+                if (event.data.path && line) {
+                  navigateToComment(event.data.path, line, startLine);
+                }
+              }}
+              className="flex items-center justify-between w-full opacity-50 hover:opacity-100 transition-opacity group/anchor"
+            >
+              <div className="flex items-center gap-2 overflow-hidden">
+                {getFileIcon(event.data.path)}
+                <span className="text-[8px] font-mono truncate">{event.data.path}</span>
+                <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                  {getFileKindLabel(event.data.path)}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[8px] font-mono">
+                  {formatReviewCommentLine(event.data)}
+                </span>
+                <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors group-hover/anchor:text-brand-orange">
+                  Open in Diff
+                  <ArrowRight className="w-2.5 h-2.5" />
+                </span>
+              </div>
+            </button>
           )}
         </div>
       );
@@ -1612,12 +1617,12 @@ export default function App() {
       case "unlabeled":
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">
                 {actorName}
                 <span className="text-white/40 font-normal"> {timelineEvent.event === "labeled" ? "added" : "removed"} the </span>
-                <span className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white/80 border border-white/10 bg-white/[0.04]">{timelineEvent.label?.name}</span>
+                <span className="inline-flex max-w-full align-middle rounded-full px-2 py-0.5 text-[10px] font-medium text-white/80 border border-white/10 bg-white/[0.04] break-all">{timelineEvent.label?.name}</span>
                 <span className="text-white/40 font-normal"> label</span>
               </p>
             </div>
@@ -1626,12 +1631,12 @@ export default function App() {
       case "head_ref_force_pushed":
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">
                 {actorName}
                 <span className="text-white/40 font-normal"> force-pushed the </span>
-                <span className="text-white/70 font-mono">{selectedPull?.head?.ref || "branch"}</span>
+                <span className="text-white/70 font-mono break-all">{selectedPull?.head?.ref || "branch"}</span>
                 <span className="text-white/40 font-normal"> branch</span>
                 {timelineEvent.commit_id && (
                   <span className="text-[8px] text-white/10 font-mono ml-2">{timelineEvent.commit_id.substring(0, 7)}</span>
@@ -1643,49 +1648,49 @@ export default function App() {
       case "added_to_project_v2":
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">added this to the project</span></p>
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">{actorName} <span className="text-white/40 font-normal">added this to the project</span></p>
             </div>
           </div>
         );
       case "project_v2_item_status_changed":
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">updated the project status</span></p>
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">{actorName} <span className="text-white/40 font-normal">updated the project status</span></p>
             </div>
           </div>
         );
       case "convert_to_draft":
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">converted this pull request to draft</span></p>
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">{actorName} <span className="text-white/40 font-normal">converted this pull request to draft</span></p>
             </div>
           </div>
         );
       case "ready_for_review":
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">marked this pull request ready for review</span></p>
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">{actorName} <span className="text-white/40 font-normal">marked this pull request ready for review</span></p>
             </div>
           </div>
         );
       case "cross-referenced":
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">
                 {actorName}
                 <span className="text-white/40 font-normal"> referenced this from </span>
                 {timelineEvent.source?.issue?.html_url ? (
-                  <a href={timelineEvent.source.issue.html_url} target="_blank" rel="noreferrer" className="text-white/70 underline decoration-white/10 underline-offset-4">
+                  <a href={timelineEvent.source.issue.html_url} target="_blank" rel="noreferrer" className="text-white/70 underline decoration-white/10 underline-offset-4 break-all">
                     {(timelineEvent.source.issue.repository?.full_name || "issue")}#{timelineEvent.source.issue.number}
                   </a>
                 ) : (
@@ -1698,9 +1703,9 @@ export default function App() {
       default:
         return (
           <div className="space-y-4 border-l border-white/5 pl-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-start gap-3 sm:gap-4 min-w-0">
               <img src={actor?.avatar_url} className="w-6 h-6 rounded-full opacity-40 shrink-0" />
-              <p className="text-sm font-medium text-white/80">{actorName} <span className="text-white/40 font-normal">{timelineEvent.event.replace(/_/g, " ")}</span></p>
+              <p className="min-w-0 text-[13px] sm:text-sm font-medium leading-relaxed text-white/80 break-words">{actorName} <span className="text-white/40 font-normal">{timelineEvent.event.replace(/_/g, " ")}</span></p>
             </div>
           </div>
         );
@@ -2107,8 +2112,47 @@ export default function App() {
 
     if (matchingPull) {
       pendingSavedPullRef.current = null;
+      pendingSavedPullLoadRef.current = null;
       handleSelectPull(matchingPull);
+      return;
     }
+
+    const pendingKey = `${pendingSavedPull.owner}/${pendingSavedPull.repo}#${pendingSavedPull.pull_number}`;
+    if (pendingSavedPullLoadRef.current === pendingKey) {
+      return;
+    }
+
+    pendingSavedPullLoadRef.current = pendingKey;
+
+    const loadSavedPull = async () => {
+      try {
+        const response = await fetch(
+          `/api/pulls/${pendingSavedPull.pull_number}?owner=${pendingSavedPull.owner}&repo=${pendingSavedPull.repo}`,
+        );
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const message =
+            typeof errorData.error === "string"
+              ? errorData.error
+              : `Server responded with ${response.status}`;
+          throw new Error(message);
+        }
+
+        if (pendingSavedPullRef.current !== pendingSavedPull) return;
+        if (currentOwner !== pendingSavedPull.owner || currentRepo !== pendingSavedPull.repo) return;
+
+        const pull: PullRequest = await response.json();
+        pendingSavedPullRef.current = null;
+        pendingSavedPullLoadRef.current = null;
+        handleSelectPull(pull);
+      } catch (err) {
+        if (pendingSavedPullRef.current !== pendingSavedPull) return;
+        pendingSavedPullLoadRef.current = null;
+        setError(err instanceof Error ? err.message : "Failed to open saved pull request.");
+      }
+    };
+
+    loadSavedPull();
   }, [pulls, viewMode, currentOwner, currentRepo]);
 
   const resetRepoState = () => {
@@ -2555,17 +2599,27 @@ export default function App() {
       setHasMore(data.length === 30);
 
       if (reset) {
+        const pendingSavedPull = pendingSavedPullRef.current;
+        const shouldKeepPendingSelection =
+          pendingSavedPull &&
+          pendingSavedPull.owner === currentOwner &&
+          pendingSavedPull.repo === currentRepo;
+
         if (data.length > 0) {
-          handleSelectPull(data[0]);
+          if (!shouldKeepPendingSelection) {
+            handleSelectPull(data[0]);
+          }
         } else {
-          setSelectedPull(null);
-          setFiles([]);
-          setSelectedFile(null);
-          setComments([]);
-          setReviewComments([]);
-          setTimelineEvents([]);
-          setContentEdits([]);
-          setCheckSummary(null);
+          if (!shouldKeepPendingSelection) {
+            setSelectedPull(null);
+            setFiles([]);
+            setSelectedFile(null);
+            setComments([]);
+            setReviewComments([]);
+            setTimelineEvents([]);
+            setContentEdits([]);
+            setCheckSummary(null);
+          }
         }
       }
     } catch (err: any) {
@@ -2757,7 +2811,7 @@ export default function App() {
                 <button
                   data-e2e="theme-toggle"
                   onClick={() => {
-                  const themes: ("dark" | "midnight" | "grey")[] = ["dark", "midnight", "grey"];
+                  const themes: ThemePreference[] = ["dark", "midnight", "grey", "graphite"];
                   const currentIndex = themes.indexOf(theme);
                   const nextIndex = (currentIndex + 1) % themes.length;
                   setTheme(themes[nextIndex]);
@@ -2768,6 +2822,7 @@ export default function App() {
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "dark" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "midnight" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "grey" ? "bg-brand-orange scale-110" : "bg-white/10")} />
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "graphite" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                 </div>
                 <div className="hidden sm:block w-[34px] lg:w-[46px] overflow-hidden">
                   <AnimatePresence mode="wait" initial={false}>
@@ -2779,7 +2834,7 @@ export default function App() {
                       whileHover={{ opacity: 1 }}
                       className="block text-[8px] uppercase tracking-[0.28em] font-bold text-white transition-opacity text-left text-nowrap"
                     >
-                      {theme === "dark" ? "Onyx" : theme === "midnight" ? "Night" : "Grey"}
+                      {theme === "dark" ? "Onyx" : theme === "midnight" ? "Night" : theme === "grey" ? "Grey" : "Graph"}
                     </motion.span>
                   </AnimatePresence>
                 </div>
@@ -2891,6 +2946,17 @@ export default function App() {
                           </div>
 
                           <div className="pt-2.5">
+                            {recentRepos.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={clearRecentRepos}
+                                aria-label="Clear recent repositories"
+                                className="mb-1.5 flex w-full items-center justify-between rounded-lg px-2 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-white/30 transition-colors hover:bg-white/[0.03] hover:text-white/60"
+                              >
+                                Clear repos
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={signOut}
                               className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
@@ -3183,7 +3249,7 @@ export default function App() {
               )}
 
               {authUser && recentRepos.length > 0 && (
-                <div data-e2e="sidebar-saved-pulls" className="space-y-2">
+                <div data-e2e="sidebar-recent-repos" className="space-y-2">
                   <button
                     type="button"
                     onClick={() => setIsSidebarRecentReposOpen((current) => !current)}
@@ -3201,7 +3267,7 @@ export default function App() {
                     />
                   </button>
                   {isSidebarRecentReposOpen && (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {recentRepos.slice(0, 4).map((entry) => {
                         const isActive =
                           entry.owner === currentOwner && entry.repo === currentRepo;
@@ -3263,7 +3329,6 @@ export default function App() {
                   )}
                 </div>
               )}
-
               <div className="flex gap-2 border border-white/5 bg-black/20 rounded-xl p-1">
                 <button
                   onClick={() => setViewMode("pulls")}
@@ -3514,7 +3579,7 @@ export default function App() {
           className={cn(
             "hidden lg:block w-8 h-full cursor-col-resize transition-all z-50 group flex-shrink-0 relative",
             isResizing && "bg-white/[0.03]",
-            isSidebarHidden && "w-10 opacity-80"
+            isSidebarHidden && "w-10"
           )}
         >
           <div
@@ -3767,7 +3832,7 @@ export default function App() {
                 {/* Tab Content */}
                 <div className="space-y-12 min-h-[600px]">
                   {activeTab === "timeline" ? (
-                    <div className="max-w-3xl mx-auto space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    <div className="w-full min-w-0 max-w-3xl mx-auto overflow-hidden space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       <div className="relative space-y-12 lg:space-y-16 py-4">
                         {/* The Vertical Line */}
                         <div className="absolute left-[20px] top-0 bottom-0 w-px bg-white/5" />
@@ -3778,7 +3843,7 @@ export default function App() {
                             initial={{ opacity: 0, x: -10 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: idx * 0.05 }}
-                            className="relative pl-12 sm:pl-20 group"
+                            className="relative min-w-0 pl-12 sm:pl-20 group"
                           >
                             {(() => {
                               const meta = getTimelineMeta(event);
@@ -3793,7 +3858,7 @@ export default function App() {
                             </div>
 
                             <div className="space-y-4">
-                              <div className="flex items-center gap-4 text-[9px] font-mono opacity-30 uppercase tracking-widest">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono opacity-30 uppercase tracking-widest">
                                 <span>{new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                 <span>{new Date(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                 <span className={cn("text-[8px] uppercase tracking-widest", meta.labelClass)}>
