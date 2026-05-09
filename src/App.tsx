@@ -1474,24 +1474,24 @@ export default function App() {
                   navigateToComment(event.data.path, line, startLine);
                 }
               }}
-              className="flex items-center justify-between w-full opacity-50 hover:opacity-100 transition-opacity group/anchor"
+              className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 opacity-50 transition-opacity group/anchor hover:opacity-100"
             >
-              <div className="flex items-center gap-2 overflow-hidden">
+              <div className="flex min-w-0 flex-[1_1_100%] items-start gap-2 text-left sm:flex-1 sm:items-center">
                 {getFileIcon(event.data.path)}
-                <span className="text-[8px] font-mono truncate">{event.data.path}</span>
-                <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                <span className="min-w-0 break-all text-[8px] font-mono leading-relaxed sm:truncate">
+                  {event.data.path}
+                </span>
+                <span className="hidden shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14 sm:inline">
                   {getFileKindLabel(event.data.path)}
                 </span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[8px] font-mono">
-                  {formatReviewCommentLine(event.data)}
-                </span>
-                <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors group-hover/anchor:text-brand-orange">
-                  Open in Diff
-                  <ArrowRight className="w-2.5 h-2.5" />
-                </span>
-              </div>
+              <span className="pl-5 text-[8px] font-mono leading-none sm:pl-0">
+                {formatReviewCommentLine(event.data)}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] leading-none text-white/18 transition-colors group-hover/anchor:text-brand-orange">
+                Open in Diff
+                <ArrowRight className="w-2.5 h-2.5" />
+              </span>
             </button>
           )}
         </div>
@@ -4473,35 +4473,33 @@ export default function App() {
                                 key={comment.id}
                                 className="space-y-6 group"
                               >
-                                <div className="flex items-center justify-between gap-4">
-                                  <div className="flex min-w-0 items-center gap-3">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:justify-between">
+                                  <div className="flex min-w-0 flex-[1_1_100%] items-start gap-3 sm:flex-1 sm:items-center">
                                     {getFileIcon(comment.path)}
-                                    <span className="min-w-0 truncate text-[9px] font-mono text-white/20">
+                                    <span className="min-w-0 break-all text-[9px] font-mono leading-relaxed text-white/20 sm:truncate">
                                       {comment.path}
                                     </span>
-                                    <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
+                                    <span className="hidden shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14 sm:inline">
                                       {getFileKindLabel(comment.path)}
                                     </span>
                                   </div>
-                                  <div className="flex shrink-0 items-center gap-3">
-                                    <a
-                                      href={comment.html_url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-[9px] text-white/10 hover:text-white/40 font-mono italic transition-all"
+                                  <a
+                                    href={comment.html_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="pl-6 text-[9px] text-white/10 hover:text-white/40 font-mono italic leading-none transition-all sm:pl-0"
+                                  >
+                                    {formatReviewCommentLine(comment)}
+                                  </a>
+                                  {comment.path && line && (
+                                    <button
+                                      onClick={() => navigateToComment(comment.path!, line, startLine)}
+                                      className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] leading-none text-white/18 transition-colors hover:text-brand-orange"
                                     >
-                                      {formatReviewCommentLine(comment)}
-                                    </a>
-                                    {comment.path && line && (
-                                      <button
-                                        onClick={() => navigateToComment(comment.path!, line, startLine)}
-                                        className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors hover:text-brand-orange"
-                                      >
-                                        Open in Diff
-                                        <ArrowRight className="w-2.5 h-2.5" />
-                                      </button>
-                                    )}
-                                  </div>
+                                      Open in Diff
+                                      <ArrowRight className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
                                 </div>
                                 <div className="flex gap-5 sm:gap-8">
                                   <img
