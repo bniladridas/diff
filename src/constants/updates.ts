@@ -8,6 +8,15 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.3.3-rc.1",
+    title: "Release Notes Smoke Test",
+    description: "Temporary release automation validation.",
+    category: "fix",
+    details: [
+      "Validated generated GitHub release notes"
+    ]
+  },
+  {
     version: "0.3.2",
     title: "Mobile Review Navigation",
     description: "Refined mobile review rendering and annotation jumps.",
