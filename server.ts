@@ -193,6 +193,11 @@ async function startServer() {
     res.status(error.response?.status || 500).json({ error: displayMsg });
   };
 
+  const hasNoCommonAncestor = (error: any) => {
+    const message = error.response?.data?.message || error.message || "";
+    return typeof message === "string" && message.includes("No common ancestor");
+  };
+
   app.get("/api/pulls", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
@@ -644,6 +649,10 @@ async function startServer() {
       );
       res.send(response.data);
     } catch (error: any) {
+      if (hasNoCommonAncestor(error)) {
+        res.send("");
+        return;
+      }
       handleError(res, error, "CompareDiff");
     }
   });
@@ -658,7 +667,29 @@ async function startServer() {
       );
       res.json(response.data.files);
     } catch (error: any) {
+      if (hasNoCommonAncestor(error)) {
+        res.json([]);
+        return;
+      }
       handleError(res, error, "CompareFiles");
+    }
+  });
+
+  app.get("/api/compare/:base/:head/commits", async (req, res) => {
+    try {
+      const { owner, repo } = getRepoCtx(req);
+      const { base, head } = req.params;
+      const response = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`,
+        { headers: getHeaders("application/vnd.github.v3+json") },
+      );
+      res.json(response.data.commits || []);
+    } catch (error: any) {
+      if (hasNoCommonAncestor(error)) {
+        res.json([]);
+        return;
+      }
+      handleError(res, error, "CompareCommits");
     }
   });
 

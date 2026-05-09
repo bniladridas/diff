@@ -153,7 +153,7 @@ interface GithubCommit {
   author: {
     login: string;
     avatar_url: string;
-  };
+  } | null;
 }
 
 interface GithubReview {
@@ -1346,11 +1346,15 @@ export default function App() {
   };
 
   const getTimeline = (): TimelineEvent[] => {
-    if (!selectedPull) return [];
+    if (!selectedPull && !selectedBranch) return [];
 
     const events: TimelineEvent[] = [];
 
     commits.forEach(c => events.push({ type: 'commit', date: c.commit.author.date, data: c }));
+    if (selectedBranch) {
+      return events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+
     comments.forEach(c => events.push({ type: 'issue_comment', date: c.created_at, data: c }));
     reviewComments.forEach(c => events.push({ type: 'review_comment', date: c.created_at, data: c }));
     contentEdits.forEach((edit) => {
@@ -1432,7 +1436,11 @@ export default function App() {
       return (
         <div className="space-y-4 border-l border-white/5 pl-6">
           <div className="flex items-center gap-4">
-            <img src={event.data.author?.avatar_url} className="w-4 h-4 rounded-full opacity-20 shrink-0" />
+            {event.data.author?.avatar_url ? (
+              <img src={event.data.author.avatar_url} className="w-4 h-4 rounded-full opacity-20 shrink-0" />
+            ) : (
+              <GitCommit className="w-4 h-4 text-white/20 shrink-0" />
+            )}
             <div className="min-w-0">
               <p className="text-[13px] font-normal text-white/40 line-clamp-2 leading-relaxed">{event.data.commit.message} <span className="text-[8px] text-white/10 font-mono ml-2">{event.data.sha.substring(0, 7)}</span></p>
             </div>
@@ -2542,6 +2550,11 @@ export default function App() {
     setSelectedFile(null);
     setComments([]);
     setReviewComments([]);
+    setCommits([]);
+    setTimelineEvents([]);
+    setContentEdits([]);
+    setCheckSummary(null);
+    setCheckRuns([]);
     setActiveTab("diff");
 
     try {
@@ -2554,9 +2567,14 @@ export default function App() {
         return;
       }
 
-      const filesRes = await fetch(
-        `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/files?owner=${currentOwner}&repo=${currentRepo}`,
-      );
+      const [filesRes, commitsRes] = await Promise.all([
+        fetch(
+          `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/files?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
+        fetch(
+          `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/commits?owner=${currentOwner}&repo=${currentRepo}`,
+        ),
+      ]);
       if (repoKeyRef.current !== requestKey) return;
       if (filesRes.ok) {
         const data = await filesRes.json();
@@ -2565,6 +2583,11 @@ export default function App() {
         if (data.length > 0) {
           setSelectedFile(data[0]);
         }
+      }
+      if (commitsRes.ok) {
+        const data = await commitsRes.json();
+        if (repoKeyRef.current !== requestKey) return;
+        setCommits(data);
       }
     } catch (err) {
       if (repoKeyRef.current !== requestKey) return;
@@ -3861,47 +3884,57 @@ export default function App() {
                   {activeTab === "timeline" ? (
                     <div className="w-full min-w-0 max-w-3xl mx-auto overflow-hidden space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       <div className="relative space-y-12 lg:space-y-16 py-4">
-                        {/* The Vertical Line */}
-                        <div className="absolute left-[20px] top-0 bottom-0 w-px bg-white/5" />
+                        {getTimeline().length > 0 ? (
+                          <>
+                            {/* The Vertical Line */}
+                            <div className="absolute left-[20px] top-0 bottom-0 w-px bg-white/5" />
 
-                        {getTimeline().map((event, idx) => (
-                          <motion.div
-                            key={`${event.type}-${idx}`}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.05 }}
-                            className="relative min-w-0 pl-12 sm:pl-20 group"
-                          >
-                            {(() => {
-                              const meta = getTimelineMeta(event);
-                              return (
-                                <>
-                            {/* Dot */}
-                            <div className={cn(
-                              "absolute left-4 w-[18px] h-[18px] rounded-full border-2 bg-onyx z-10 top-1 transition-transform group-hover:scale-125 duration-300 flex items-center justify-center",
-                              meta.dotClass,
-                            )}>
-                              {meta.icon}
-                            </div>
+                            {getTimeline().map((event, idx) => (
+                              <motion.div
+                                key={`${event.type}-${idx}`}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: idx * 0.05 }}
+                                className="relative min-w-0 pl-12 sm:pl-20 group"
+                              >
+                                {(() => {
+                                  const meta = getTimelineMeta(event);
+                                  return (
+                                    <>
+                                      {/* Dot */}
+                                      <div className={cn(
+                                        "absolute left-4 w-[18px] h-[18px] rounded-full border-2 bg-onyx z-10 top-1 transition-transform group-hover:scale-125 duration-300 flex items-center justify-center",
+                                        meta.dotClass,
+                                      )}>
+                                        {meta.icon}
+                                      </div>
 
-                            <div className="space-y-4">
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono opacity-30 uppercase tracking-widest">
-                                <span>{new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                                <span>{new Date(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                <span className={cn("text-[8px] uppercase tracking-widest", meta.labelClass)}>
-                                  {meta.label}
-                                </span>
-                              </div>
+                                      <div className="space-y-4">
+                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono opacity-30 uppercase tracking-widest">
+                                          <span>{new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                          <span>{new Date(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                          <span className={cn("text-[8px] uppercase tracking-widest", meta.labelClass)}>
+                                            {meta.label}
+                                          </span>
+                                        </div>
 
-                            <div className="space-y-4 pt-1">
-                              {renderTimelineEventBody(event)}
-                            </div>
-                            </div>
-                                </>
-                              );
-                            })()}
-                          </motion.div>
-                        ))}
+                                        <div className="space-y-4 pt-1">
+                                          {renderTimelineEventBody(event)}
+                                        </div>
+                                      </div>
+                                    </>
+                                  );
+                                })()}
+                              </motion.div>
+                            ))}
+                          </>
+                        ) : (
+                          <div className="rounded-xl border border-white/5 bg-white/[0.015] px-6 py-14 text-center">
+                            <p className="text-[10px] uppercase tracking-[0.35em] text-white/25">
+                              No history available
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : activeTab === "diff" ? (
