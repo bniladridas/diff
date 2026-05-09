@@ -27,10 +27,17 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Generate release notes
+        run: |
+          node --import tsx ./scripts/generate-release-notes.ts \
+            "${{ github.ref_name }}" \
+            "$RUNNER_TEMP/release-notes.md"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          generate_release_notes: true
+          name: DIFF ${{ github.ref_name }}
+          body_path: ${{ runner.temp }}/release-notes.md
           files: |
             dist/*
