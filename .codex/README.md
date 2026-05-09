@@ -1,9 +1,10 @@
 ## Repo Notes
 
-Last updated: 2026-05-09
+Last updated: 2026-05-10
 
 This repository now treats the release line as:
 
+- `v0.3.3` Branch History & Mobile Annotations
 - `v0.3.2` Mobile Review Navigation
 - `v0.3.1` State & Interface Refinements
 - `v0.3.0` Supabase Auth & User State
@@ -18,9 +19,9 @@ The in-app `Updates` feed in `src/constants/updates.ts` should stay aligned with
 
 The root `VERSION` file should stay aligned with `package.json` for each release.
 
-Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.2`; the semantic version is `0.3.2`.
+Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.3`; the semantic version is `0.3.3`.
 
-Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.2` points at the same commit as `v0.3.2`.
+Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.3` points at the same commit as `v0.3.3`.
 
 Supabase auth expects `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the local environment.
 

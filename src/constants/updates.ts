@@ -8,6 +8,17 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.3.3",
+    title: "Branch History & Mobile Annotations",
+    description: "Tightened branch history and mobile review metadata.",
+    category: "fix",
+    details: [
+      "Branch history renders compare commits",
+      "Unrelated branch comparisons show a quiet empty state",
+      "Mobile annotation file paths stay readable"
+    ]
+  },
+  {
     version: "0.3.2",
     title: "Mobile Review Navigation",
     description: "Refined mobile review rendering and annotation jumps.",
