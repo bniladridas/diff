@@ -65,4 +65,32 @@
   .prose pre code {
     @apply !bg-transparent !p-0 !text-white/90;
   }
+
+  .markdown-body {
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .markdown-body :where(p, li, blockquote, table, pre) {
+    max-width: 100%;
+  }
+
+  .markdown-body :where(a) {
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .markdown-body :where(code) {
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 639px) {
+    .markdown-body :where(ul, ol) {
+      padding-left: 1rem;
+    }
+
+    .markdown-body :where(li) {
+      padding-left: 0.125rem;
+    }
+  }
 }

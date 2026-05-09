@@ -8,6 +8,17 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.3.2",
+    title: "Mobile Review Navigation",
+    description: "Refined mobile review rendering and annotation jumps.",
+    category: "fix",
+    details: [
+      "Review annotations can jump directly back to the diff line",
+      "Mobile review markdown wraps long links and inline code without horizontal scroll",
+      "Review gutters stay aligned with the existing mobile timeline rhythm"
+    ]
+  },
+  {
     version: "0.3.1",
     title: "State & Interface Refinements",
     description: "Tightened saved state behavior, timeline layout, and account utilities.",

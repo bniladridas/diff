@@ -4,6 +4,7 @@ Last updated: 2026-05-09
 
 This repository now treats the release line as:
 
+- `v0.3.2` Mobile Review Navigation
 - `v0.3.1` State & Interface Refinements
 - `v0.3.0` Supabase Auth & User State
 - `v0.2.2` Mobile History & Changelog Polish

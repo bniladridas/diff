@@ -10,6 +10,7 @@ import {
   useState,
   useEffect,
   useRef,
+  type AnchorHTMLAttributes,
   type ReactNode,
 } from "react";
 import { type Session, type User as SupabaseUser } from "@supabase/supabase-js";
@@ -522,7 +523,33 @@ const parseDiffRows = (patch?: string): DiffRow[] => {
   return rows;
 };
 
+const SOFT_LINK_BREAK_CHARS = new Set(["/", ".", "-"]);
+
+const renderTextWithSoftBreaks = (text: string) =>
+  text.split(/([/.-])/g).map((part, index) =>
+    SOFT_LINK_BREAK_CHARS.has(part) ? (
+      <span key={`${part}-${index}`}>
+        {part}
+        <wbr />
+      </span>
+    ) : (
+      part
+    ),
+  );
+
 const markdownComponents = {
+  a({
+    children,
+    ...props
+  }: AnchorHTMLAttributes<HTMLAnchorElement> & { children?: ReactNode }) {
+    return (
+      <a {...props}>
+        {Children.map(children, (child) =>
+          typeof child === "string" ? renderTextWithSoftBreaks(child) : child,
+        )}
+      </a>
+    );
+  },
   blockquote({ children }: { children?: ReactNode }) {
     const firstText = Children.toArray(children)
       .map((child) => getTextContent(child).trimStart())
@@ -4170,7 +4197,7 @@ export default function App() {
 
                       {/* PR Description */}
                       <section className="space-y-6">
-                        <div className="prose prose-invert prose-orange max-w-none border-l border-white/5 pl-8 py-2">
+                        <div className="markdown-body prose prose-invert prose-orange max-w-none min-w-0 overflow-hidden border-l border-white/5 pl-4 sm:pl-8 py-2">
                           <ReactMarkdown
                             remarkPlugins={[remarkGfm]}
                             rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -4363,7 +4390,7 @@ export default function App() {
                             {comments.map((comment) => (
                               <div
                                 key={comment.id}
-                                className="flex gap-8 group"
+                                className="flex gap-5 sm:gap-8 group"
                               >
                                 <img
                                   src={comment.user.avatar_url}
@@ -4379,7 +4406,7 @@ export default function App() {
                                       {new Date(comment.created_at).toLocaleDateString()}
                                     </span>
                                   </div>
-                                  <div className="prose prose-invert prose-sm max-w-none text-white/50 leading-relaxed font-sans border-l border-white/5 pl-6">
+                                  <div className="markdown-body prose prose-invert prose-sm max-w-none min-w-0 overflow-hidden text-white/50 leading-relaxed font-sans border-l border-white/5 pl-4 sm:pl-6">
                                     <ReactMarkdown
                                       remarkPlugins={[remarkGfm]}
                                       rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -4404,37 +4431,52 @@ export default function App() {
                             </h3>
                           </div>
                           <div className="space-y-12">
-                            {reviewComments.map((comment) => (
+                            {reviewComments.map((comment) => {
+                              const line = comment.line || comment.original_line;
+                              const startLine = comment.start_line || comment.original_start_line;
+
+                              return (
                               <div
                                 key={comment.id}
                                 className="space-y-6 group"
                               >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
+                                <div className="flex items-center justify-between gap-4">
+                                  <div className="flex min-w-0 items-center gap-3">
                                     {getFileIcon(comment.path)}
-                                    <span className="text-[9px] font-mono text-white/20">
+                                    <span className="min-w-0 truncate text-[9px] font-mono text-white/20">
                                       {comment.path}
                                     </span>
                                     <span className="shrink-0 rounded-sm border border-white/[0.04] bg-white/[0.015] px-1 py-px text-[6px] font-medium uppercase tracking-[0.16em] text-white/14">
                                       {getFileKindLabel(comment.path)}
                                     </span>
                                   </div>
-                                  <a
-                                    href={comment.html_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[9px] text-white/10 hover:text-white/40 font-mono italic transition-all"
-                                  >
-                                    {formatReviewCommentLine(comment)}
-                                  </a>
+                                  <div className="flex shrink-0 items-center gap-3">
+                                    <a
+                                      href={comment.html_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[9px] text-white/10 hover:text-white/40 font-mono italic transition-all"
+                                    >
+                                      {formatReviewCommentLine(comment)}
+                                    </a>
+                                    {comment.path && line && (
+                                      <button
+                                        onClick={() => navigateToComment(comment.path!, line, startLine)}
+                                        className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors hover:text-brand-orange"
+                                      >
+                                        Open in Diff
+                                        <ArrowRight className="w-2.5 h-2.5" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="flex gap-8">
+                                <div className="flex gap-5 sm:gap-8">
                                   <img
                                     src={comment.user.avatar_url}
                                     alt=""
                                     className="w-8 h-8 grayscale opacity-20 shrink-0 rounded-full group-hover:opacity-40 transition-opacity"
                                   />
-                                  <div className="space-y-4 flex-1">
+                                  <div className="space-y-4 flex-1 min-w-0">
                                     <div className="flex items-center justify-between">
                                       <span className="text-[10px] tracking-wider font-medium text-white/40 group-hover:text-white/60 transition-colors">
                                         {comment.user.login}
@@ -4443,7 +4485,7 @@ export default function App() {
                                         {new Date(comment.created_at).toLocaleDateString()}
                                       </span>
                                     </div>
-                                    <div className="prose prose-invert prose-sm max-w-none text-white/30 border-l border-white/5 pl-8 py-1">
+                                    <div className="markdown-body prose prose-invert prose-sm max-w-none min-w-0 overflow-hidden text-white/30 border-l border-white/5 pl-4 sm:pl-8 py-1">
                                       <ReactMarkdown
                                         remarkPlugins={[remarkGfm]}
                                         rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -4455,7 +4497,8 @@ export default function App() {
                                   </div>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </section>
                       )}
