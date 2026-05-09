@@ -20,6 +20,8 @@ The root `VERSION` file should stay aligned with `package.json` for each release
 
 Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.2`; the semantic version is `0.3.2`.
 
+Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.2` points at the same commit as `v0.3.2`.
+
 Supabase auth expects `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the local environment.
 
 Supabase GitHub login in this repo uses a GitHub OAuth App, not a GitHub App. The callback URL registered in GitHub must be the Supabase auth callback for the project.
