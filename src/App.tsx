@@ -442,6 +442,9 @@ const preventMouseFocusOnClickControls = (event: ReactMouseEvent<HTMLElement>) =
     event.preventDefault();
   }
 };
+const orderPullsForStream = (items: PullRequest[]) => {
+  return [...items].sort((a, b) => b.number - a.number);
+};
 const clearAuthHashFromUrl = () => {
   if (!window.location.hash && !window.location.href.endsWith("#")) return;
   window.history.replaceState(
@@ -1095,6 +1098,9 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const repoKeyRef = useRef(`${currentOwner}/${currentRepo}`);
+  const viewModeRef = useRef(viewMode);
+  const stateFilterRef = useRef(stateFilter);
+  const selectedPullNumberRef = useRef<number | null>(null);
   const diffHighlightTimeoutRef = useRef<number | null>(null);
   const authMenuRef = useRef<HTMLDivElement | null>(null);
   const preferencesHydratedRef = useRef(false);
@@ -1110,6 +1116,12 @@ export default function App() {
   const deferredRepoSearchQuery = useDeferredValue(repoSearchQuery);
   const canReadRemoteRepo = true;
   const readAuthKey = `${authLoading ? "loading" : "ready"}:${authSession?.access_token ? "session" : "public"}:${githubProviderToken ? "github" : "none"}`;
+
+  useEffect(() => {
+    viewModeRef.current = viewMode;
+    stateFilterRef.current = stateFilter;
+  }, [viewMode, stateFilter]);
+
   const diffRows = useMemo(() => parseDiffRows(selectedFile?.patch), [selectedFile?.patch]);
   const repoFiles = useMemo(() => repoTree.filter((item) => item.type === "blob"), [repoTree]);
   const normalizedRepoSearchQuery = deferredRepoSearchQuery.trim().toLowerCase();
@@ -1688,9 +1700,10 @@ export default function App() {
         ...pullData,
         labels: Array.isArray(labelsData) ? labelsData : pullData.labels,
       } as PullRequest;
+      selectedPullNumberRef.current = nextPull.number;
       setSelectedPull(nextPull);
       setPulls((current) =>
-        current.map((pull) => (pull.number === nextPull.number ? nextPull : pull)),
+        orderPullsForStream(current.map((pull) => (pull.number === nextPull.number ? nextPull : pull))),
       );
       setIsEditingPullMeta(false);
       await refreshReviewData(selectedPull.number);
@@ -2700,6 +2713,7 @@ export default function App() {
     setRepoPullUrl(null);
     setRepoSearchQuery("");
     setPulls([]);
+    selectedPullNumberRef.current = null;
     setSelectedPull(null);
     setFiles([]);
     setSelectedFile(null);
@@ -3159,6 +3173,7 @@ export default function App() {
     setLoading(true);
     setLoadingRepoTree(true);
     setError(null);
+    selectedPullNumberRef.current = null;
     setSelectedPull(null);
     setSelectedBranch(null);
     setFiles([]);
@@ -3484,6 +3499,7 @@ export default function App() {
   ) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
     setSelectedBranch(branch);
+    selectedPullNumberRef.current = null;
     setSelectedPull(null);
     setLoadingFiles(true);
     setFiles([]);
@@ -3543,8 +3559,18 @@ export default function App() {
 
   const fetchPulls = async (pageNum = 1, reset = false) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
-    if (pageNum === 1) setLoading(true);
-    else setLoadingMore(true);
+    const requestedStateFilter = stateFilter;
+    const isCurrentPullListRequest = () =>
+      repoKeyRef.current === requestKey &&
+      viewModeRef.current === "pulls" &&
+      stateFilterRef.current === requestedStateFilter;
+
+    if (pageNum === 1) {
+      setLoading(true);
+      setLoadingMore(false);
+    } else {
+      setLoadingMore(true);
+    }
     setError(null);
     if (!canReadRemoteRepo) {
       setLoading(false);
@@ -3555,18 +3581,19 @@ export default function App() {
     try {
       const readHeaders = getReadHeaders();
       const response = await fetch(
-        `/api/pulls?state=${stateFilter}&page=${pageNum}&per_page=30&owner=${currentOwner}&repo=${currentRepo}`,
+        `/api/pulls?state=${requestedStateFilter}&page=${pageNum}&per_page=30&owner=${currentOwner}&repo=${currentRepo}`,
         { headers: readHeaders },
       );
-      if (repoKeyRef.current !== requestKey) return;
+      if (!isCurrentPullListRequest()) return;
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         if (response.status === 404 && repoInfo) {
-          const newPulls: PullRequest[] = reset ? [] : pulls;
+          const newPulls: PullRequest[] = reset ? [] : orderPullsForStream(pulls);
           setPulls(newPulls);
           setHasMore(false);
 
           if (reset) {
+            selectedPullNumberRef.current = null;
             setSelectedPull(null);
             setFiles([]);
             setSelectedFile(null);
@@ -3593,9 +3620,9 @@ export default function App() {
         throw new Error(message);
       }
       const data: PullRequest[] = await response.json();
-      if (repoKeyRef.current !== requestKey) return;
+      if (!isCurrentPullListRequest()) return;
 
-      const newPulls = reset ? data : [...pulls, ...data];
+      const newPulls = orderPullsForStream(reset ? data : [...pulls, ...data]);
       setPulls(newPulls);
       setHasMore(data.length === 30);
 
@@ -3606,12 +3633,13 @@ export default function App() {
           pendingSavedPull.owner === currentOwner &&
           pendingSavedPull.repo === currentRepo;
 
-        if (data.length > 0) {
+        if (newPulls.length > 0) {
           if (!shouldKeepPendingSelection) {
-            handleSelectPull(data[0]);
+            handleSelectPull(newPulls[0]);
           }
         } else {
           if (!shouldKeepPendingSelection) {
+            selectedPullNumberRef.current = null;
             setSelectedPull(null);
             setFiles([]);
             setSelectedFile(null);
@@ -3624,10 +3652,10 @@ export default function App() {
         }
       }
     } catch (err: any) {
-      if (repoKeyRef.current !== requestKey) return;
+      if (!isCurrentPullListRequest()) return;
       setError(err.message);
     } finally {
-      if (repoKeyRef.current === requestKey) {
+      if (isCurrentPullListRequest()) {
         setLoading(false);
         setLoadingMore(false);
       }
@@ -3646,6 +3674,7 @@ export default function App() {
 
   const handleSelectPull = async (pull: PullRequest) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
+    selectedPullNumberRef.current = pull.number;
     setSelectedPull(pull);
     setLoadingFiles(true);
     setLoadingComments(true);
@@ -3704,14 +3733,14 @@ export default function App() {
         ),
       ]);
 
-      if (repoKeyRef.current !== requestKey) return;
+      if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pull.number) return;
 
       if (pullRes.ok) {
         const pullData = await pullRes.json();
         const nextPull = { ...pull, ...pullData } as PullRequest;
         setSelectedPull(nextPull);
         setPulls((current) =>
-          current.map((item) => (item.number === nextPull.number ? nextPull : item)),
+          orderPullsForStream(current.map((item) => (item.number === nextPull.number ? nextPull : item))),
         );
       }
 
@@ -3742,10 +3771,10 @@ export default function App() {
         });
       }
     } catch (err) {
-      if (repoKeyRef.current !== requestKey) return;
+      if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pull.number) return;
       console.error("PR data fetch error:", err);
     } finally {
-      if (repoKeyRef.current === requestKey) {
+      if (repoKeyRef.current === requestKey && selectedPullNumberRef.current === pull.number) {
         setLoadingFiles(false);
         setLoadingComments(false);
       }
@@ -3779,13 +3808,13 @@ export default function App() {
         fetch(`/api/pulls/${pullNumber}/edits?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
       ]);
 
-      if (repoKeyRef.current !== requestKey) return;
+      if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pullNumber) return;
 
       if (pullRes.ok) {
         const pull = await pullRes.json();
         setSelectedPull(pull);
         setPulls((current) =>
-          current.map((item) => (item.number === pull.number ? pull : item)),
+          orderPullsForStream(current.map((item) => (item.number === pull.number ? pull : item))),
         );
       }
 
@@ -3816,7 +3845,7 @@ export default function App() {
 
       setLiveLastUpdate(new Date().toISOString());
     } catch (err) {
-      if (repoKeyRef.current !== requestKey) return;
+      if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pullNumber) return;
       console.error("Live pull refresh error:", err);
     }
   };
