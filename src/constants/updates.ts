@@ -8,6 +8,17 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.6.1",
+    title: "Pull Stream Fixes",
+    description: "Pull lists stay steadier while switching and selecting.",
+    category: "fix",
+    details: [
+      "Ignore stale pull stream responses",
+      "Keep pull ordering stable after selection",
+      "Keep live refresh from replacing the active pull"
+    ]
+  },
+  {
     version: "0.6.0",
     title: "Code PR Workspace",
     description: "Code view covers more branch and PR work with quieter spacing.",
@@ -187,11 +198,11 @@ export const APP_UPDATES: AppUpdate[] = [
   {
     version: "Next",
     title: "Open Notes",
-    description: "Items to watch after this release.",
+    description: "Notes for the next pass.",
     category: "planned",
     details: [
-      "Polish the new flows",
-      "Keep release notes compact as scope becomes clear"
+      "Watch day-to-day review flow",
+      "Keep release notes compact"
     ]
   },
 ];

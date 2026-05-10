@@ -4,6 +4,7 @@ Last updated: 2026-05-11
 
 Release line:
 
+- `v0.6.1` Pull Stream Fixes
 - `v0.6.0` Code PR Workspace
 - `v0.5.0` Code Branches
 - `v0.4.0` Live Code Workspace
@@ -28,9 +29,9 @@ Keep update and release-note copy calm, compact, and non-pushy. Prefer maintenan
 
 `VERSION` and `package.json` must match for each release.
 
-Release tags use `v`-prefixed SemVer. Example: tag `v0.6.0`, version `0.6.0`.
+Release tags use `v`-prefixed SemVer. Example: tag `v0.6.1`, version `0.6.1`.
 
-Each stable tag needs a matching release branch at the same commit. Example: `release/0.6.0` points at `v0.6.0`.
+Each stable tag needs a matching release branch at the same commit. Example: `release/0.6.1` points at `v0.6.1`.
 
 When bumping a release, update all version-bearing release files together:
 
@@ -68,7 +69,7 @@ Live pull refresh uses `/api/live` WebSockets on a long-running Node server. Ser
 
 Code view uses `/api/repo/tree` and `/api/repo/content`. Signed-in file edits and creates use `PUT /api/repo/content` with an explicit commit message; existing-file edits include the current file SHA, while new-file creates omit it. Branch and PR flows use `/api/repo/branch`, `/api/pulls`, `/api/pulls/:number`, `/api/pulls/:number/update-branch`, `/api/pulls/:number/merge`, `/api/pulls/:number/head-branch`, and `/api/pulls/:number/labels`. Conflict resolution in Code view is same-repo only; fork PRs should stay on GitHub or switch to a future explicit fork workspace. `npm run check:app` covers these routes.
 
-The current Code PR workspace release is part of `v0.6.0`.
+The current pull stream stability release is part of `v0.6.1`.
 
 The strongest local verification sequence before release is:
 
