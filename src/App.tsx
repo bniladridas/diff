@@ -1757,11 +1757,11 @@ export default function App() {
         return;
       }
 
-      const fetchLogs = async () => {
+      const fetchLogs = async (jobId: number) => {
         setLoadingLogs(true);
         try {
           const response = await fetch(
-            `/api/checks/${selectedRunId}/logs?owner=${currentOwner}&repo=${currentRepo}`,
+            `/api/checks/${jobId}/logs?owner=${currentOwner}&repo=${currentRepo}`,
           );
           if (response.ok) {
             const text = await response.text();
@@ -1784,6 +1784,11 @@ export default function App() {
           if (response.ok) {
             const data = await response.json();
             setSelectedRunDetail(data);
+            if (typeof data.job_id === "number") {
+              await fetchLogs(data.job_id);
+            } else {
+              setRunLogs(null);
+            }
 
             // If it's now completed, we should probably stop polling or do one last fetch
             if (data.status === "completed" && interval) {
@@ -1808,13 +1813,11 @@ export default function App() {
         setRunLogs(null);
       } else {
         fetchRunDetail();
-        fetchLogs();
 
         // Start polling if it's in progress
         if (run.status === "in_progress" || run.status === "queued") {
           interval = setInterval(() => {
             fetchRunDetail();
-            fetchLogs();
           }, 5000); // Poll every 5 seconds
         }
       }

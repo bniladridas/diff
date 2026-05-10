@@ -8,25 +8,25 @@ This repository uses GitHub Actions for validation and release work.
 
 - `workflows/typescript-check.yml`
   Runs the baseline validation on pushes to `main` and pull requests:
-  - dependency install
+  - lockfile-based dependency install with `npm ci`
   - `npm run lint`
   - workflow YAML lint
   - `pre-commit` hooks
 
 - `workflows/app-check.yml`
   Runs the app-level read-only verification on pull requests and manual dispatch:
-  - dependency install
+  - lockfile-based dependency install with `npm ci`
   - `npm run lint`
   - Playwright Chromium install
   - starts the local app server
   - runs `npm run check:app`
   - runs `npm run check:e2e`
 
-  This workflow is intentionally read-only. It does not seed a Supabase user session and does not publish live GitHub comments or reviews.
+  This workflow is intentionally read-only. It does not seed a Supabase user session and does not publish live GitHub comments or reviews. Without a seeded session, `check:e2e` runs anonymous browser coverage. Without auth tokens, `check:app` treats authenticated preference and write checks as optional pass-through checks; set `DIFF_REQUIRE_AUTH_CHECKS=1` in a secret-backed environment when those checks must be enforced.
 
 - `workflows/release.yml`
   Builds and publishes a GitHub release when a `v*` tag is pushed. The release generator validates that the tag is a `v`-prefixed Semantic Versioning 2.0.0 value, such as `v0.3.3`, `v1.0.0`, or `v1.0.0-rc.1`.
-  - dependency install
+  - lockfile-based dependency install with `npm ci`
   - `npm run lint`
   - `npm run build`
   - generates release notes from `src/constants/updates.ts`
@@ -35,7 +35,7 @@ This repository uses GitHub Actions for validation and release work.
 - `workflows/nightly-prerelease.yml`
   Builds and publishes nightly prereleases. Scheduled runs stay dormant until the repo variable `ENABLE_NIGHTLY_RELEASES` is set to `true`.
   - computes a nightly tag and title
-  - dependency install
+  - lockfile-based dependency install with `npm ci`
   - `npm run lint`
   - `npm run build`
   - publishes `dist/*` as a prerelease without marking it latest
@@ -47,3 +47,4 @@ This repository uses GitHub Actions for validation and release work.
 - While DIFF is in `0.y.z`, releases are still initial-development releases. PATCH versions are used for fixes and narrow refinements, MINOR versions are used for larger backward-compatible additions, and prerelease identifiers such as `-rc.1` may be used before a stable cut.
 - The app checks use `GITHUB_TOKEN` for GitHub API reads. If the default workflow token is not sufficient for the repo targets DIFF is reading, move that workflow to a dedicated secret-backed token.
 - Authenticated browser flows, live PR comments, inline review comments, and review submission are verified manually or through local seeded `check:e2e` runs, not in default CI.
+- Strict authenticated route checks require `DIFF_REQUIRE_AUTH_CHECKS=1`, `DIFF_SUPABASE_ACCESS_TOKEN`, and `DIFF_GITHUB_PROVIDER_TOKEN`.

@@ -31,9 +31,11 @@ Per-user app state currently syncs through `public.user_preferences`, defined in
 
 The current GitHub write path uses the Supabase GitHub provider token with `repo read:user user:email` scopes and covers pull request discussion comments, inline review comments, and review submission.
 
-The authenticated browser verifier uses `window.__DIFF_E2E__` in dev mode. Prefer `writeSessionFile()` to write `/tmp/diff-session.json` and run with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json`; `DIFF_E2E_SESSION_JSON` remains available when a file cannot be used.
+The browser verifier runs anonymous coverage when no seeded session is provided. Authenticated browser verification uses `window.__DIFF_E2E__` in dev mode. Prefer `writeSessionFile()` to write `/tmp/diff-session.json` and run with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json`; `DIFF_E2E_SESSION_JSON` remains available when a file cannot be used.
 
 If a seeded e2e run skips `signed-out-fallback`, that is expected. Snapshot seeding is meant to rehydrate auth on reload, so full signed-out reload verification still requires a manual or OAuth-driven session path.
+
+`npm run check:app` treats authenticated preference and write checks as optional unless `DIFF_REQUIRE_AUTH_CHECKS=1` is set with `DIFF_SUPABASE_ACCESS_TOKEN` and `DIFF_GITHUB_PROVIDER_TOKEN`.
 
 The strongest local verification sequence before release is:
 

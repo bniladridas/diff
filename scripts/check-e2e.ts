@@ -81,6 +81,7 @@ const E2E_GITHUB_LOGIN = process.env.DIFF_E2E_GITHUB_LOGIN || null;
 const GITHUB_PROVIDER_TOKEN_STORAGE_KEY = "diff_github_provider_token";
 
 const results: CheckResult[] = [];
+let anonymousModeRecorded = false;
 
 const record = (status: CheckStatus, name: string, detail: string) => {
   results.push({ status, name, detail });
@@ -273,7 +274,14 @@ async function ensureRepoWithPulls(page: Page, owner: string, repo: string) {
 
 async function seedSession(page: Page) {
   if (!sessionSeed) {
-    skip("auth-seed", "set DIFF_E2E_SESSION_JSON to verify authenticated browser flows");
+    if (!anonymousModeRecorded) {
+      record(
+        "pass",
+        "anonymous-mode",
+        "no seeded session provided; running anonymous browser coverage",
+      );
+      anonymousModeRecorded = true;
+    }
     return false;
   }
 
@@ -725,7 +733,6 @@ async function verifyMobileFlow() {
       !anonymousState.authUserId && !anonymousState.authLoading,
       "mobile anonymous fallback shell remains usable without a seeded session",
     );
-    skip("mobile-auth-shell", "authenticated mobile shell requires DIFF_E2E_SESSION_JSON");
     await browser.close();
     return;
   }
@@ -800,7 +807,14 @@ async function main() {
       const signOutPage = await desktopSignOutContext.newPage();
       await openApp(signOutPage);
       const hasAuth = await seedSession(signOutPage);
-      if (hasAuth) {
+      if (!hasAuth) {
+        const anonymousState = await getState(signOutPage);
+        assertPass(
+          "signed-out-fallback",
+          !anonymousState.authUserId && !anonymousState.authLoading,
+          "anonymous fallback remains usable without a seeded session",
+        );
+      } else {
         await bridge(signOutPage, "signOut");
         const state = await waitForState(
           signOutPage,

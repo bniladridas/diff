@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Compute nightly metadata
         id: nightly
@@ -35,7 +36,7 @@ jobs:
           echo "name=Nightly ${stamp} (${short_sha})" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint

@@ -198,6 +198,26 @@ async function startServer() {
     return typeof message === "string" && message.includes("No common ancestor");
   };
 
+  const getActionsJobIdFromCheckRun = (checkRun: any) => {
+    const candidateUrls = [
+      checkRun?.details_url,
+      checkRun?.html_url,
+    ].filter((value): value is string => typeof value === "string");
+
+    for (const url of candidateUrls) {
+      const match = url.match(/\/job\/(\d+)(?:\D|$)/);
+      if (match) {
+        return match[1];
+      }
+    }
+
+    if (checkRun?.app?.slug === "github-actions" && typeof checkRun?.id === "number") {
+      return String(checkRun.id);
+    }
+
+    return null;
+  };
+
   app.get("/api/pulls", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
@@ -715,6 +735,7 @@ async function startServer() {
         `https://api.github.com/repos/${owner}/${repo}/check-runs/${check_run_id}`,
         { headers: getHeaders("application/vnd.github.v3+json") },
       );
+      const actionsJobId = getActionsJobIdFromCheckRun(runDetail.data);
 
       const [annotations, suiteRuns, actionsJob] = await Promise.all([
         axios.get(
@@ -727,10 +748,12 @@ async function startServer() {
               { headers: getHeaders("application/vnd.github.v3+json") }
             ).catch(() => ({ data: { check_runs: [] } }))
           : Promise.resolve({ data: { check_runs: [] } }),
-        axios.get(
-          `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${check_run_id}`,
-          { headers: getHeaders("application/vnd.github+json") },
-        ).catch(() => ({ data: null }))
+        actionsJobId
+          ? axios.get(
+              `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${actionsJobId}`,
+              { headers: getHeaders("application/vnd.github+json") },
+            ).catch(() => ({ data: null }))
+          : Promise.resolve({ data: null }),
       ]);
 
       const actionJobData = actionsJob.data;
@@ -744,9 +767,14 @@ async function startServer() {
         ...(actionJobData
           ? {
               runner_name: actionJobData.runner_name,
+              job_id: actionJobData.id,
               labels: actionJobData.labels,
               started_at: actionJobData.started_at || runDetail.data.started_at,
               completed_at: actionJobData.completed_at || runDetail.data.completed_at,
+            }
+          : actionsJobId
+          ? {
+              job_id: Number(actionsJobId),
             }
           : {}),
         annotations: annotations.data || [],
@@ -762,8 +790,7 @@ async function startServer() {
       const { owner, repo } = getRepoCtx(req);
       const { job_id } = req.params;
 
-      // Try to get logs from GitHub Actions Jobs API
-      // Note: check_run_id and job_id are identical for GitHub Actions
+      // Try to get logs from GitHub Actions Jobs API.
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${job_id}/logs`,
         {
