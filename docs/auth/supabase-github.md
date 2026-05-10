@@ -2,7 +2,7 @@
 
 # Supabase GitHub Auth
 
-DIFF uses Supabase Auth for app identity and a GitHub OAuth App for GitHub sign-in. Signed-in users can sync preferences, save review state, publish reviews, commit Code view edits, create branches, open PRs, and update PR metadata.
+DIFF uses Supabase Auth for app identity and a GitHub OAuth App for GitHub sign-in. Signed-in users can sync preferences, save review state, publish reviews, edit or create Code view files, create branches, open PRs, update PR metadata, update branches, merge with merge/squash/rebase, and delete merged head branches.
 
 For local development, set the frontend environment variables in `.env`:
 
@@ -25,9 +25,9 @@ Supabase also needs the application URLs registered under `Authentication` -> `U
 
 For Vercel, add the production Vercel origin or custom domain. Add preview origins too if preview sign-in should work.
 
-The GitHub write integration requests `repo`, `read:user`, and `user:email` scopes. The server validates the Supabase session, verifies the provider token belongs to the same GitHub user, then proxies the requested write action. This is an OAuth model, not a GitHub App installation model.
+The GitHub integration requests `repo`, `read:user`, and `user:email` scopes. The server validates the Supabase session, verifies the provider token belongs to the same GitHub user, then uses that token for signed-in private reads and requested write actions. This is an OAuth model, not a GitHub App installation model.
 
-For repositories owned by an organization, the signed-in user must authorize the OAuth App and the organization may also need to approve that OAuth App under its third-party application access policy. If that approval is missing, read-only GitHub API calls can still work while write actions fail with GitHub OAuth App access restriction errors.
+For repositories owned by an organization, the signed-in user must authorize the OAuth App and the organization may also need to approve that OAuth App under its third-party application access policy. If that approval is missing, public or server-token reads may still work while signed-in private reads or write actions fail with GitHub OAuth App access restriction errors.
 
 ## Troubleshooting
 
@@ -72,7 +72,7 @@ npm run check:e2e
 
 Use `COMMENT` first because it verifies the review submit path without changing approval state.
 
-Code view commits are also available as an opt-in write check. Run this only against a sandbox file and branch you are comfortable mutating:
+Code view edit and create commits are also available as opt-in write checks. Run these only against sandbox files and branches you are comfortable mutating:
 
 ```bash
 export DIFF_E2E_LIVE_CODE_COMMIT=1
@@ -84,9 +84,17 @@ npm run check:e2e
 
 The check appends a timestamped marker and verifies it through the file content route.
 
+New-file creation can be checked with a fresh path:
+
+```bash
+export DIFF_E2E_LIVE_CODE_CREATE=1
+export DIFF_E2E_CODE_CREATE_PATH=docs/e2e-created.md
+npm run check:e2e
+```
+
 If the authenticated write checks fail with `Bad credentials`, the GitHub provider token is stale or revoked. Sign out in DIFF, revoke the GitHub OAuth grant if needed, sign in again, and regenerate the session snapshot before rerunning the verifier.
 
-If inline review or review submission fails with an OAuth App access restriction for an organization repository, approve the DIFF OAuth App in that GitHub organization, then sign out and sign back in so Supabase receives a fresh GitHub provider token.
+If private PR detail reads, inline review, or review submission fail with an OAuth App access restriction for an organization repository, approve the DIFF OAuth App in that GitHub organization, then sign out and sign back in so Supabase receives a fresh GitHub provider token.
 
 For the anonymous fallback pass, run the verifier without a seeded session:
 

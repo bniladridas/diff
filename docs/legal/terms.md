@@ -2,13 +2,13 @@
 
 # Terms of Use
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 DIFF is provided by Coccinella Labs Inc. By using DIFF, you agree to use it responsibly and only with GitHub accounts and repositories you are authorized to access.
 
 ## GitHub Access
 
-DIFF reads repository and PR data from GitHub. If you sign in, DIFF may use your GitHub OAuth provider token to publish comments, reviews, Code view commits, branches, PRs, PR metadata, and labels only when you request them in the interface.
+DIFF reads repository and PR data from GitHub. If you sign in, DIFF may use your GitHub OAuth provider token to read private repository or PR details and to publish comments, reviews, Code view file edits or creates, branches, PR actions, branch cleanup, PR metadata, and labels only when you request them in the interface.
 
 You are responsible for any GitHub actions you submit through DIFF.
 

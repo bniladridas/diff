@@ -6,6 +6,18 @@ import { createClient } from "@supabase/supabase-js";
 import { writeFile } from "node:fs/promises";
 import { WebSocket, WebSocketServer } from "ws";
 
+const isInvalidRepoFilePath = (filePath: string) =>
+  filePath.startsWith("/") ||
+  filePath.endsWith("/") ||
+  filePath.includes("//") ||
+  filePath.split("/").some((segment) => segment === "..");
+
+const isInvalidBranchName = (name: string) =>
+  name.startsWith("/") ||
+  name.endsWith("/") ||
+  name.includes("..") ||
+  !/^[A-Za-z0-9._/-]+$/.test(name);
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
@@ -60,8 +72,6 @@ async function startServer() {
     }
     return headers;
   };
-
-  const getPublicGitHubHeaders = (accept: string) => ({ Accept: accept });
 
   const getRepoCtx = (req: any) => ({
     owner: (req.query.owner as string) || REPO_OWNER,
@@ -188,21 +198,28 @@ async function startServer() {
     };
   };
 
-  const getRepoReadHeaders = async (req: express.Request, accept: string) => {
+  const getRepoReadHeaders = async (
+    req: express.Request,
+    accept: string,
+  ): Promise<Record<string, string>> => {
+    const accessToken = readBearerToken(req);
     const providerTokenHeader = req.headers["x-github-provider-token"];
-    const hasProviderToken = Array.isArray(providerTokenHeader)
-      ? Boolean(providerTokenHeader[0])
-      : Boolean(providerTokenHeader);
+    const providerToken = Array.isArray(providerTokenHeader)
+      ? providerTokenHeader[0]
+      : providerTokenHeader;
 
-    if (!readBearerToken(req) && !hasProviderToken) {
-      return getPublicGitHubHeaders(accept);
+    if (providerToken?.trim()) {
+      return {
+        Accept: accept,
+        Authorization: `token ${providerToken.trim()}`,
+      };
     }
 
-    const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
-    return {
-      Accept: accept,
-      Authorization: `token ${githubProviderToken}`,
-    };
+    if (accessToken) {
+      throw new HttpError(401, "GitHub provider token required.");
+    }
+
+    return getHeaders(accept);
   };
 
   const handleError = (res: any, error: any, context: string) => {
@@ -268,17 +285,21 @@ async function startServer() {
       const state = req.query.state || "open";
       const page = req.query.page || 1;
       const perPage = req.query.per_page || 30;
-      const response = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/pulls?state=${state}&per_page=${perPage}&page=${page}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
-      );
+      const url = `https://api.github.com/repos/${owner}/${repo}/pulls?state=${state}&per_page=${perPage}&page=${page}`;
+      const readHeaders = await getRepoReadHeaders(req, "application/vnd.github.v3+json");
+      const response = await axios.get(url, { headers: readHeaders }).catch(async (error) => {
+        if (readHeaders.Authorization && [403, 404].includes(error.response?.status)) {
+          return axios.get(url, { headers: getHeaders("application/vnd.github.v3+json") });
+        }
+        throw error;
+      });
       res.json(response.data);
     } catch (error: any) {
       if (error.response?.status === 404) {
         try {
           const { owner, repo } = getRepoCtx(req);
           await axios.get(`https://api.github.com/repos/${owner}/${repo}`, {
-            headers: getHeaders("application/vnd.github.v3+json"),
+            headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json"),
           });
           res.json([]);
           return;
@@ -294,10 +315,14 @@ async function startServer() {
     try {
       const { owner, repo } = getRepoCtx(req);
       const { number } = req.params;
-      const response = await axios.get(
-        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
-      );
+      const url = `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`;
+      const readHeaders = await getRepoReadHeaders(req, "application/vnd.github.v3+json");
+      const response = await axios.get(url, { headers: readHeaders }).catch(async (error) => {
+        if (readHeaders.Authorization && [403, 404].includes(error.response?.status)) {
+          return axios.get(url, { headers: getHeaders("application/vnd.github.v3+json") });
+        }
+        throw error;
+      });
       res.json(response.data);
     } catch (error: any) {
       handleError(res, error, "Pull");
@@ -382,7 +407,7 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
-        { headers: getHeaders("application/vnd.github.v3.diff") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3.diff") },
       );
       res.send(response.data);
     } catch (error: any) {
@@ -396,7 +421,7 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/files`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -410,7 +435,7 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/issues/${number}/comments`,
-        { headers: getHeaders("application/vnd.github.v3+json", req) },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -565,7 +590,7 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/comments`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -579,7 +604,7 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/reviews`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -593,7 +618,7 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/issues/${number}/timeline?per_page=100`,
-        { headers: getHeaders("application/vnd.github+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -605,6 +630,7 @@ async function startServer() {
     try {
       const { owner, repo } = getRepoCtx(req);
       const { number } = req.params;
+      const headers = await getRepoReadHeaders(req, "application/vnd.github+json");
       const response = await axios.post(
         "https://api.github.com/graphql",
         {
@@ -633,7 +659,7 @@ async function startServer() {
             number: Number(number),
           },
         },
-        { headers: getHeaders("application/vnd.github+json") },
+        { headers },
       );
 
       res.json(
@@ -650,7 +676,7 @@ async function startServer() {
       const { number } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/commits`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -662,10 +688,11 @@ async function startServer() {
     try {
       const { owner, repo } = getRepoCtx(req);
       const { number } = req.params;
+      const headers = await getRepoReadHeaders(req, "application/vnd.github.v3+json");
 
       const prResponse = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers },
       );
 
       const headSha = prResponse.data.head.sha;
@@ -678,11 +705,11 @@ async function startServer() {
         const [checks, statuses] = await Promise.all([
           axios.get(
             `https://api.github.com/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=100`,
-            { headers: getHeaders("application/vnd.github.v3+json") },
+            { headers },
           ),
           axios.get(
             `https://api.github.com/repos/${owner}/${repo}/commits/${sha}/statuses?per_page=100`,
-            { headers: getHeaders("application/vnd.github.v3+json") },
+            { headers },
           )
         ]);
         return { checks: checks.data.check_runs || [], statuses: statuses.data || [] };
@@ -767,7 +794,7 @@ async function startServer() {
       const perPage = req.query.per_page || 30;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/branches?per_page=${perPage}&page=${page}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -781,7 +808,7 @@ async function startServer() {
       const { base, head } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`,
-        { headers: getHeaders("application/vnd.github.v3.diff") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3.diff") },
       );
       res.send(response.data);
     } catch (error: any) {
@@ -799,7 +826,7 @@ async function startServer() {
       const { base, head } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data.files);
     } catch (error: any) {
@@ -817,7 +844,7 @@ async function startServer() {
       const { base, head } = req.params;
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/compare/${base}...${head}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data.commits || []);
     } catch (error: any) {
@@ -834,7 +861,7 @@ async function startServer() {
       const { owner, repo } = getRepoCtx(req);
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: await getRepoReadHeaders(req, "application/vnd.github.v3+json") },
       );
       res.json(response.data);
     } catch (error: any) {
@@ -925,19 +952,29 @@ async function startServer() {
         return;
       }
 
-      if (!sha) {
-        res.status(400).json({ error: "Current file SHA is required." });
+      if (isInvalidRepoFilePath(filePath)) {
+        res.status(400).json({ error: "File path is invalid." });
         return;
+      }
+
+      const payload: {
+        message: string;
+        content: string;
+        branch: string;
+        sha?: string;
+      } = {
+        message,
+        content: Buffer.from(content, "utf8").toString("base64"),
+        branch,
+      };
+
+      if (sha) {
+        payload.sha = sha;
       }
 
       const response = await axios.put(
         `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath).replace(/%2F/g, "/")}`,
-        {
-          message,
-          content: Buffer.from(content, "utf8").toString("base64"),
-          branch,
-          sha,
-        },
+        payload,
         {
           headers: {
             Accept: "application/vnd.github.v3+json",
@@ -969,12 +1006,7 @@ async function startServer() {
         return;
       }
 
-      if (
-        name.startsWith("/") ||
-        name.endsWith("/") ||
-        name.includes("..") ||
-        !/^[A-Za-z0-9._/-]+$/.test(name)
-      ) {
+      if (isInvalidBranchName(name)) {
         res.status(400).json({ error: "Branch name contains unsupported characters." });
         return;
       }
@@ -1007,6 +1039,112 @@ async function startServer() {
       res.status(201).json(response.data);
     } catch (error: any) {
       handleError(res, error, "RepoBranchCreate");
+    }
+  });
+
+  app.post("/api/pulls/:number/update-branch", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const expectedHeadSha =
+        typeof req.body?.expected_head_sha === "string" ? req.body.expected_head_sha.trim() : "";
+
+      const response = await axios.put(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/update-branch`,
+        expectedHeadSha ? { expected_head_sha: expectedHeadSha } : {},
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            Authorization: `token ${githubProviderToken}`,
+          },
+        },
+      );
+
+      res.status(response.status).json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "PullUpdateBranch");
+    }
+  });
+
+  app.put("/api/pulls/:number/merge", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const method = typeof req.body?.method === "string" ? req.body.method.trim() : "merge";
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const message = typeof req.body?.message === "string" ? req.body.message : "";
+      const sha = typeof req.body?.sha === "string" ? req.body.sha.trim() : "";
+
+      if (!["merge", "squash", "rebase"].includes(method)) {
+        res.status(400).json({ error: "Merge method must be merge, squash, or rebase." });
+        return;
+      }
+
+      const response = await axios.put(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}/merge`,
+        {
+          merge_method: method,
+          ...(title ? { commit_title: title } : {}),
+          ...(message ? { commit_message: message } : {}),
+          ...(sha ? { sha } : {}),
+        },
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            Authorization: `token ${githubProviderToken}`,
+          },
+        },
+      );
+
+      res.json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "PullMerge");
+    }
+  });
+
+  app.delete("/api/pulls/:number/head-branch", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const headers = {
+        Accept: "application/vnd.github.v3+json",
+        Authorization: `token ${githubProviderToken}`,
+      };
+
+      const pullResponse = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
+        { headers },
+      );
+      const pull = pullResponse.data;
+      const headRef = typeof pull?.head?.ref === "string" ? pull.head.ref : "";
+      const headRepo = typeof pull?.head?.repo?.full_name === "string" ? pull.head.repo.full_name : "";
+
+      if (!pull?.merged) {
+        res.status(409).json({ error: "Pull request must be merged before deleting its branch." });
+        return;
+      }
+
+      if (headRepo !== `${owner}/${repo}`) {
+        res.status(409).json({ error: "Only branches in the current repository can be deleted." });
+        return;
+      }
+
+      if (!headRef || isInvalidBranchName(headRef)) {
+        res.status(400).json({ error: "Pull request head branch is invalid." });
+        return;
+      }
+
+      await axios.delete(
+        `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(headRef).replace(/%2F/g, "/")}`,
+        { headers },
+      );
+
+      res.json({ deleted: true, branch: headRef });
+    } catch (error: any) {
+      handleError(res, error, "PullHeadBranchDelete");
     }
   });
 
@@ -1060,28 +1198,30 @@ async function startServer() {
     try {
       const { owner, repo } = getRepoCtx(req);
       const { check_run_id } = req.params;
+      const jsonHeaders = await getRepoReadHeaders(req, "application/vnd.github.v3+json");
+      const actionsHeaders = await getRepoReadHeaders(req, "application/vnd.github+json");
 
       const runDetail = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/check-runs/${check_run_id}`,
-        { headers: getHeaders("application/vnd.github.v3+json") },
+        { headers: jsonHeaders },
       );
       const actionsJobId = getActionsJobIdFromCheckRun(runDetail.data);
 
       const [annotations, suiteRuns, actionsJob] = await Promise.all([
         axios.get(
           `https://api.github.com/repos/${owner}/${repo}/check-runs/${check_run_id}/annotations`,
-          { headers: getHeaders("application/vnd.github.v3+json") },
+          { headers: jsonHeaders },
         ).catch(() => ({ data: [] })),
         runDetail.data.check_suite?.id
           ? axios.get(
               `https://api.github.com/repos/${owner}/${repo}/check-suites/${runDetail.data.check_suite.id}/check-runs`,
-              { headers: getHeaders("application/vnd.github.v3+json") }
+              { headers: jsonHeaders }
             ).catch(() => ({ data: { check_runs: [] } }))
           : Promise.resolve({ data: { check_runs: [] } }),
         actionsJobId
           ? axios.get(
               `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${actionsJobId}`,
-              { headers: getHeaders("application/vnd.github+json") },
+              { headers: actionsHeaders },
             ).catch(() => ({ data: null }))
           : Promise.resolve({ data: null }),
       ]);
@@ -1124,7 +1264,7 @@ async function startServer() {
       const response = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${job_id}/logs`,
         {
-          headers: getHeaders("application/vnd.github+json"),
+          headers: await getRepoReadHeaders(req, "application/vnd.github+json"),
           responseType: "text",
           maxRedirects: 5,
         },

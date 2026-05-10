@@ -8,13 +8,26 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.6.0",
+    title: "Code PR Workspace",
+    description: "Code view covers more branch and PR work with quieter spacing.",
+    category: "feature",
+    details: [
+      "Create and edit files on working branches",
+      "Update PR title, body, labels, branches, and merge method",
+      "Resolve same-repo conflicts from Code view",
+      "Use signed-in GitHub reads for private PR details",
+      "Tighten header, sidebar, modal, and review spacing"
+    ]
+  },
+  {
     version: "0.5.0",
     title: "Code Branches",
     description: "Branch, edit, and open PRs from Code view.",
     category: "feature",
     details: [
       "Create working branches and PRs",
-      "Edit PR title, body, and labels",
+      "Commit Code view file edits",
       "Syntax-highlight repository files",
       "Read from the active branch before commits"
     ]

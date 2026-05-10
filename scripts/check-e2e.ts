@@ -76,9 +76,11 @@ const E2E_LIVE_INLINE_RANGE =
 const E2E_LIVE_REVIEW_EVENT =
   (process.env.DIFF_E2E_LIVE_REVIEW_EVENT as ReviewEvent | undefined) || null;
 const E2E_LIVE_CODE_COMMIT = process.env.DIFF_E2E_LIVE_CODE_COMMIT === "1";
+const E2E_LIVE_CODE_CREATE = process.env.DIFF_E2E_LIVE_CODE_CREATE === "1";
 const E2E_CODE_COMMIT_OWNER = process.env.DIFF_E2E_CODE_COMMIT_OWNER || ALT_REPO_OWNER;
 const E2E_CODE_COMMIT_REPO = process.env.DIFF_E2E_CODE_COMMIT_REPO || ALT_REPO_NAME;
 const E2E_CODE_COMMIT_PATH = process.env.DIFF_E2E_CODE_COMMIT_PATH || null;
+const E2E_CODE_CREATE_PATH = process.env.DIFF_E2E_CODE_CREATE_PATH || null;
 const EXPECT_WRITE_FAILURE = process.env.DIFF_E2E_EXPECT_WRITE_FAILURE === "1";
 const SKIP_SIGN_OUT = process.env.DIFF_E2E_SKIP_SIGN_OUT === "1";
 const E2E_GITHUB_LOGIN = process.env.DIFF_E2E_GITHUB_LOGIN || null;
@@ -290,6 +292,19 @@ async function seedSession(page: Page) {
   }
 
   if (sessionSeed.user) {
+    const user = sessionSeed.user;
+    const userId =
+      typeof user === "object" &&
+      user !== null &&
+      "id" in user &&
+      typeof user.id === "string"
+        ? user.id
+        : "";
+
+    if (!userId) {
+      throw new Error("Seeded Supabase session user id is required.");
+    }
+
     const storageKey = getSupabaseStorageKey();
     if (!storageKey) {
       throw new Error("Could not derive Supabase storage key from VITE_SUPABASE_URL.");
@@ -300,10 +315,16 @@ async function seedSession(page: Page) {
       ...sanitizedSession
     } = sessionSeed;
     await page.context().addInitScript(
-      ({ key, session, providerToken, providerTokenKey }) => {
+      ({ key, session, providerToken, providerTokenKey, userId }) => {
         window.localStorage.setItem(key, JSON.stringify(session));
         if (providerToken) {
-          window.localStorage.setItem(providerTokenKey, providerToken);
+          window.localStorage.setItem(
+            providerTokenKey,
+            JSON.stringify({
+              user_id: userId,
+              token: providerToken,
+            }),
+          );
         }
       },
       {
@@ -311,6 +332,7 @@ async function seedSession(page: Page) {
         session: sanitizedSession,
         providerToken: providerToken ?? null,
         providerTokenKey: GITHUB_PROVIDER_TOKEN_STORAGE_KEY,
+        userId,
       },
     );
     await page.reload({ waitUntil: "networkidle" });
@@ -787,6 +809,61 @@ async function verifyDesktopFlow(context: BrowserContext) {
     skip(
       "live-code-commit",
       "set DIFF_E2E_LIVE_CODE_COMMIT=1 and DIFF_E2E_CODE_COMMIT_PATH to publish and verify a real file commit",
+    );
+  }
+
+  if (E2E_LIVE_CODE_CREATE) {
+    if (!E2E_CODE_CREATE_PATH) {
+      record(
+        "fail",
+        "live-code-create",
+        "DIFF_E2E_CODE_CREATE_PATH is required when DIFF_E2E_LIVE_CODE_CREATE=1",
+      );
+    } else {
+      await bridge(page, "switchRepo", E2E_CODE_COMMIT_OWNER, E2E_CODE_COMMIT_REPO);
+      await waitForRepoView(page, E2E_CODE_COMMIT_OWNER, E2E_CODE_COMMIT_REPO, 20_000);
+
+      const marker = `DIFF e2e code create ${new Date().toISOString()}`;
+      const message = `DIFF e2e code create ${new Date().toISOString()}`;
+
+      try {
+        await bridge(page, "createCodeFile", E2E_CODE_CREATE_PATH, `${marker}\n`, message);
+        await page.waitForTimeout(1500);
+
+        const verifyResponse = await fetch(
+          `${BASE_URL}/api/repo/content?owner=${E2E_CODE_COMMIT_OWNER}&repo=${E2E_CODE_COMMIT_REPO}&path=${encodeURIComponent(E2E_CODE_CREATE_PATH)}`,
+        );
+        const verifiedContent = await verifyResponse.text();
+
+        if (EXPECT_WRITE_FAILURE) {
+          assertPass(
+            "live-code-create-failure",
+            !verifiedContent.includes(marker),
+            "code create failure remained visible as no file mutation",
+          );
+        } else {
+          assertPass(
+            "live-code-create",
+            verifiedContent.includes(marker),
+            `code file ${E2E_CODE_CREATE_PATH} created`,
+          );
+        }
+      } catch (error) {
+        if (EXPECT_WRITE_FAILURE || isOAuthAppAccessRestriction(error)) {
+          record(
+            EXPECT_WRITE_FAILURE ? "pass" : "skip",
+            EXPECT_WRITE_FAILURE ? "live-code-create-failure" : "live-code-create",
+            error instanceof Error ? error.message : "code create rejected",
+          );
+        } else {
+          throw error;
+        }
+      }
+    }
+  } else {
+    skip(
+      "live-code-create",
+      "set DIFF_E2E_LIVE_CODE_CREATE=1 and DIFF_E2E_CODE_CREATE_PATH to publish and verify a real file create",
     );
   }
 

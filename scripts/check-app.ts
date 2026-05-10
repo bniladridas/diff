@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-DIFF
 
 import "dotenv/config";
+import { existsSync, readFileSync } from "node:fs";
 import { WebSocket } from "ws";
 
 type CheckStatus = "pass" | "warn" | "fail" | "skip";
@@ -59,12 +60,43 @@ const DEFAULT_OWNER = process.env.GITHUB_REPO_OWNER || "harpertoken";
 const DEFAULT_REPO = process.env.GITHUB_REPO_NAME || "harper";
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
-const SUPABASE_ACCESS_TOKEN = process.env.DIFF_SUPABASE_ACCESS_TOKEN;
-const GITHUB_PROVIDER_TOKEN = process.env.DIFF_GITHUB_PROVIDER_TOKEN;
 const WRITE_COMMENT_BODY = process.env.DIFF_POST_COMMENT_BODY;
 const WRITE_COMMENT_PR_NUMBER = process.env.DIFF_POST_COMMENT_PR_NUMBER;
 const REQUIRE_AUTH_CHECKS = process.env.DIFF_REQUIRE_AUTH_CHECKS === "1";
 const SAMPLE_COUNT = Math.max(1, Number(process.env.DIFF_SAMPLE_COUNT || "3"));
+const ENV_SUPABASE_ACCESS_TOKEN = process.env.DIFF_SUPABASE_ACCESS_TOKEN || "";
+const ENV_GITHUB_PROVIDER_TOKEN = process.env.DIFF_GITHUB_PROVIDER_TOKEN || "";
+
+const loadSavedSession = () => {
+  const sessionPath = "/tmp/diff-session.json";
+  if (!existsSync(sessionPath)) return null;
+
+  try {
+    const session = JSON.parse(readFileSync(sessionPath, "utf8")) as {
+      access_token?: unknown;
+      provider_token?: unknown;
+    };
+    return {
+      accessToken: typeof session.access_token === "string" ? session.access_token : "",
+      providerToken: typeof session.provider_token === "string" ? session.provider_token : "",
+    };
+  } catch {
+    return null;
+  }
+};
+
+const SAVED_SESSION = loadSavedSession();
+const SUPABASE_ACCESS_TOKEN = ENV_SUPABASE_ACCESS_TOKEN || SAVED_SESSION?.accessToken || "";
+const GITHUB_PROVIDER_TOKEN = ENV_GITHUB_PROVIDER_TOKEN || SAVED_SESSION?.providerToken || "";
+const READ_HEADERS: Record<string, string> = GITHUB_PROVIDER_TOKEN
+  ? {
+      ...(SUPABASE_ACCESS_TOKEN ? { Authorization: `Bearer ${SUPABASE_ACCESS_TOKEN}` } : {}),
+      "X-GitHub-Provider-Token": GITHUB_PROVIDER_TOKEN,
+    }
+  : {};
+const READ_OPTIONS: RequestInit = Object.keys(READ_HEADERS).length
+  ? { headers: READ_HEADERS }
+  : {};
 
 const results: CheckResult[] = [];
 
@@ -290,7 +322,7 @@ async function checkSupabasePreferences() {
 }
 
 async function checkWritePath(owner: string, repo: string, pullNumber: number) {
-  if (!SUPABASE_ACCESS_TOKEN || !GITHUB_PROVIDER_TOKEN) {
+  if (!ENV_SUPABASE_ACCESS_TOKEN || !ENV_GITHUB_PROVIDER_TOKEN) {
     record({
       name: "write-route",
       status: REQUIRE_AUTH_CHECKS ? "fail" : "pass",
@@ -310,8 +342,8 @@ async function checkWritePath(owner: string, repo: string, pullNumber: number) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${SUPABASE_ACCESS_TOKEN}`,
-          "X-GitHub-Provider-Token": GITHUB_PROVIDER_TOKEN,
+          Authorization: `Bearer ${ENV_SUPABASE_ACCESS_TOKEN}`,
+          "X-GitHub-Provider-Token": ENV_GITHUB_PROVIDER_TOKEN,
         },
         body: JSON.stringify({ body: WRITE_COMMENT_BODY }),
       },
@@ -334,8 +366,8 @@ async function checkWritePath(owner: string, repo: string, pullNumber: number) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${SUPABASE_ACCESS_TOKEN}`,
-        "X-GitHub-Provider-Token": GITHUB_PROVIDER_TOKEN,
+        Authorization: `Bearer ${ENV_SUPABASE_ACCESS_TOKEN}`,
+        "X-GitHub-Provider-Token": ENV_GITHUB_PROVIDER_TOKEN,
       },
       body: JSON.stringify({ body: "" }),
     },
@@ -419,7 +451,7 @@ async function main() {
   const repoTree = await timedJsonCheck<RepoTreePayload>(
     "repo-tree",
     `${BASE_URL}/api/repo/tree?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}&ref=${repoInfo?.default_branch ?? "HEAD"}`,
-    {},
+    READ_OPTIONS,
     [200],
     2600,
   );
@@ -434,7 +466,7 @@ async function main() {
     const repoContent = await timedTextCheck(
       "repo-content",
       `${BASE_URL}/api/repo/content?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}&path=${encodeURIComponent(firstRepoFile.path)}&ref=${repoInfo?.default_branch ?? "HEAD"}`,
-      {},
+      READ_OPTIONS,
       [200],
       2200,
     );
@@ -503,12 +535,47 @@ async function main() {
       [401, 503],
       1800,
     );
+
+    await timedJsonCheck(
+      "pull-update-branch-auth",
+      `${BASE_URL}/api/pulls/1/update-branch?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expected_head_sha: "check-auth" }),
+      },
+      [401, 503],
+      1800,
+    );
+
+    await timedJsonCheck(
+      "pull-merge-auth",
+      `${BASE_URL}/api/pulls/1/merge?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method: "merge" }),
+      },
+      [401, 503],
+      1800,
+    );
+
+    await timedJsonCheck(
+      "pull-delete-branch-auth",
+      `${BASE_URL}/api/pulls/1/head-branch?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      },
+      [401, 503],
+      1800,
+    );
   }
 
   const pulls = await timedJsonCheck<PullRequestSummary[]>(
     "pulls",
     `${BASE_URL}/api/pulls?state=open&page=1&per_page=5`,
-    {},
+    READ_OPTIONS,
     [200],
     2400,
   );
@@ -574,15 +641,15 @@ async function main() {
       timeline,
       edits,
     ] = await Promise.all([
-      timedTextCheck("pull-diff", `${pullBase}/diff?owner=${owner}&repo=${repo}`, {}, [200], 2600),
-      timedJsonCheck<PullFileSummary[]>("pull-files", `${pullBase}/files?owner=${owner}&repo=${repo}`, {}, [200], 2600),
-      timedJsonCheck<unknown[]>("pull-comments", `${pullBase}/comments?owner=${owner}&repo=${repo}`, {}, [200], 1800),
-      timedJsonCheck<unknown[]>("pull-review-comments", `${pullBase}/review-comments?owner=${owner}&repo=${repo}`, {}, [200], 1800),
-      timedJsonCheck<ChecksPayload>("pull-checks", `${pullBase}/checks?owner=${owner}&repo=${repo}`, {}, [200], 2600),
-      timedJsonCheck<unknown[]>("pull-commits", `${pullBase}/commits?owner=${owner}&repo=${repo}`, {}, [200], 2200),
-      timedJsonCheck<unknown[]>("pull-reviews", `${pullBase}/reviews?owner=${owner}&repo=${repo}`, {}, [200], 1800),
-      timedJsonCheck<unknown[]>("pull-timeline", `${pullBase}/timeline?owner=${owner}&repo=${repo}`, {}, [200], 2400),
-      timedJsonCheck<unknown[]>("pull-edits", `${pullBase}/edits?owner=${owner}&repo=${repo}`, {}, [200], 2400),
+      timedTextCheck("pull-diff", `${pullBase}/diff?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 2600),
+      timedJsonCheck<PullFileSummary[]>("pull-files", `${pullBase}/files?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 2600),
+      timedJsonCheck<unknown[]>("pull-comments", `${pullBase}/comments?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 1800),
+      timedJsonCheck<unknown[]>("pull-review-comments", `${pullBase}/review-comments?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 1800),
+      timedJsonCheck<ChecksPayload>("pull-checks", `${pullBase}/checks?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 2600),
+      timedJsonCheck<unknown[]>("pull-commits", `${pullBase}/commits?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 2200),
+      timedJsonCheck<unknown[]>("pull-reviews", `${pullBase}/reviews?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 1800),
+      timedJsonCheck<unknown[]>("pull-timeline", `${pullBase}/timeline?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 2400),
+      timedJsonCheck<unknown[]>("pull-edits", `${pullBase}/edits?owner=${owner}&repo=${repo}`, READ_OPTIONS, [200], 2400),
     ]);
 
     assertCondition(
@@ -645,7 +712,7 @@ async function main() {
         const checkDetail = await timedJsonCheck<CheckRunDetails>(
           "check-run-detail",
           `${BASE_URL}/api/checks/${firstCheckRunId}?owner=${owner}&repo=${repo}`,
-          {},
+          READ_OPTIONS,
           [200],
           2200,
         );
@@ -665,6 +732,7 @@ async function main() {
           try {
             const response = await fetch(
               `${BASE_URL}/api/checks/${checkRunId}?owner=${owner}&repo=${repo}`,
+              READ_OPTIONS,
             );
             if (!response.ok) continue;
             const candidate = (await response.json()) as CheckRunDetails;
@@ -694,6 +762,7 @@ async function main() {
             const started = nowMs();
             const response = await fetch(
               `${BASE_URL}/api/checks/${detail.job_id}/logs?owner=${owner}&repo=${repo}`,
+              READ_OPTIONS,
             );
             const durationMs = nowMs() - started;
 
@@ -775,14 +844,14 @@ async function main() {
         timedTextCheck(
           "compare-diff",
           `${BASE_URL}/api/compare/${encodeURIComponent(compareBase)}/${encodeURIComponent(compareHead)}/diff?owner=${owner}&repo=${repo}`,
-          {},
+          READ_OPTIONS,
           [200],
           2600,
         ),
         timedJsonCheck(
           "compare-files",
           `${BASE_URL}/api/compare/${encodeURIComponent(compareBase)}/${encodeURIComponent(compareHead)}/files?owner=${owner}&repo=${repo}`,
-          {},
+          READ_OPTIONS,
           [200],
           2600,
         ),
@@ -800,21 +869,21 @@ async function main() {
       sampleRoute(
         "perf-pulls",
         `${BASE_URL}/api/pulls?state=open&page=1&per_page=10`,
-        {},
+        READ_OPTIONS,
         [200],
         2000,
       ),
       sampleRoute(
         "perf-pull-files",
         `${pullBase}/files?owner=${owner}&repo=${repo}`,
-        {},
+        READ_OPTIONS,
         [200],
         2200,
       ),
       sampleRoute(
         "perf-pull-checks",
         `${pullBase}/checks?owner=${owner}&repo=${repo}`,
-        {},
+        READ_OPTIONS,
         [200],
         2400,
       ),

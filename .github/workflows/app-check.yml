@@ -1,7 +1,9 @@
 ---
-name: App Check
+name: 🐞 App Check
 
 "on":
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

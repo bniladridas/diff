@@ -2,7 +2,7 @@
 
 # Privacy Policy
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 DIFF is a browser-based pull request review tool provided by Coccinella Labs Inc. This policy explains what information DIFF uses when you sign in with GitHub through Supabase.
 
@@ -18,7 +18,7 @@ DIFF is a browser-based pull request review tool provided by Coccinella Labs Inc
 
 DIFF uses this information to sign you in, show PR data, sync preferences, restore recent state, and publish GitHub changes you choose.
 
-Authenticated writes are sent to GitHub as the signed-in user. These can include comments, reviews, commits, branches, PRs, PR metadata, and labels. DIFF does not sell personal information.
+Authenticated reads and writes are sent to GitHub as the signed-in user when needed for private repository access or actions you request. Writes can include comments, reviews, commits, branches, PRs, PR metadata, and labels. DIFF does not sell personal information.
 
 ## Third-Party Services
 

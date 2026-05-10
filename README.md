@@ -1,12 +1,12 @@
 <!-- SPDX-License-Identifier: LicenseRef-DIFF -->
 
-# DIFF
+# <img src="https://raw.githubusercontent.com/Coccinella-Labs/Coccinella-Labs.github.io/main/999KB.png" alt="DIFF logo" width="28" height="28"> DIFF
 
 DIFF is a focused interface for reading pull requests without the surrounding noise of hosted forge UIs. It pulls repository data from GitHub, keeps review context close to the diff, and uses a compact workspace with a resizable navigation panel and a single review surface.
 
 The app is a React frontend with Tailwind styling and a small Node server for GitHub API access. It supports live review refresh with HTTP fallback, Code view repository browsing, Supabase-backed user state, and GitHub-backed sign-in for authenticated review actions.
 
-Authenticated GitHub writes require the signed-in user's GitHub OAuth approval. Organization repositories may also require OAuth App approval. Signed-in users can publish reviews, commit Code view edits, create branches, open PRs, and update PR metadata.
+Authenticated GitHub writes require the signed-in user's GitHub OAuth approval. Organization repositories may also require OAuth App approval. Signed-in users can publish reviews, edit or create Code view files, create branches, open PRs, update PR metadata, update branches, merge with merge/squash/rebase, and delete merged head branches.
 
 Setup and operational detail live in dedicated docs:
 

@@ -1,9 +1,10 @@
 ## Repo Notes
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 Release line:
 
+- `v0.6.0` Code PR Workspace
 - `v0.5.0` Code Branches
 - `v0.4.0` Live Code Workspace
 - `v0.3.5` Sign-In Trust Update
@@ -27,9 +28,9 @@ Keep update and release-note copy calm, compact, and non-pushy. Prefer maintenan
 
 `VERSION` and `package.json` must match for each release.
 
-Release tags use `v`-prefixed SemVer. Example: tag `v0.5.0`, version `0.5.0`.
+Release tags use `v`-prefixed SemVer. Example: tag `v0.6.0`, version `0.6.0`.
 
-Each stable tag needs a matching release branch at the same commit. Example: `release/0.5.0` points at `v0.5.0`.
+Each stable tag needs a matching release branch at the same commit. Example: `release/0.6.0` points at `v0.6.0`.
 
 When bumping a release, update all version-bearing release files together:
 
@@ -53,7 +54,7 @@ Per-user app state syncs through `public.user_preferences`. Related migrations:
 - `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`
 - `supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql`
 
-GitHub writes use the Supabase GitHub provider token with `repo read:user user:email` scopes. The write path covers comments, reviews, Code view commits, branch creation, PR creation, PR metadata edits, and labels.
+GitHub reads and writes use the Supabase GitHub provider token when a user is signed in. The `repo read:user user:email` scopes support private PR detail reads plus comments, reviews, Code view edits and creates, branch creation/deletion, PR creation, branch updates, PR merge/squash/rebase, PR metadata edits, and labels.
 
 The browser verifier runs anonymous coverage without a seeded session. For authenticated checks, use `window.__DIFF_E2E__.writeSessionFile()` in dev mode, then run with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json`. `DIFF_E2E_SESSION_JSON` remains available when a file cannot be used.
 
@@ -61,13 +62,13 @@ If a seeded e2e run skips `signed-out-fallback`, that is expected. Snapshot seed
 
 `npm run check:app` treats authenticated preference and write checks as optional unless `DIFF_REQUIRE_AUTH_CHECKS=1` is set with `DIFF_SUPABASE_ACCESS_TOKEN` and `DIFF_GITHUB_PROVIDER_TOKEN`.
 
-`npm run check:e2e` keeps live write actions opt-in. Code view commit verification requires `DIFF_E2E_LIVE_CODE_COMMIT=1` and `DIFF_E2E_CODE_COMMIT_PATH`. Use a sandbox file because it creates a real GitHub commit.
+`npm run check:e2e` keeps live write actions opt-in. Code view edit verification requires `DIFF_E2E_LIVE_CODE_COMMIT=1` and `DIFF_E2E_CODE_COMMIT_PATH`; new-file verification requires `DIFF_E2E_LIVE_CODE_CREATE=1` and `DIFF_E2E_CODE_CREATE_PATH`. Use sandbox files because these create real GitHub commits.
 
 Live pull refresh uses `/api/live` WebSockets on a long-running Node server. Serverless deployments fall back to timed HTTP refresh. `npm run check:app` includes a local `live-channel` assertion.
 
-Code view uses `/api/repo/tree` and `/api/repo/content`. Signed-in file commits use `PUT /api/repo/content` with the current file SHA and an explicit commit message. Branch and PR flows use `/api/repo/branch`, `/api/pulls`, `/api/pulls/:number`, and `/api/pulls/:number/labels`. `npm run check:app` covers these routes.
+Code view uses `/api/repo/tree` and `/api/repo/content`. Signed-in file edits and creates use `PUT /api/repo/content` with an explicit commit message; existing-file edits include the current file SHA, while new-file creates omit it. Branch and PR flows use `/api/repo/branch`, `/api/pulls`, `/api/pulls/:number`, `/api/pulls/:number/update-branch`, `/api/pulls/:number/merge`, `/api/pulls/:number/head-branch`, and `/api/pulls/:number/labels`. Conflict resolution in Code view is same-repo only; fork PRs should stay on GitHub or switch to a future explicit fork workspace. `npm run check:app` covers these routes.
 
-The previous planned items are now part of `v0.5.0`.
+The current Code PR workspace release is part of `v0.6.0`.
 
 The strongest local verification sequence before release is:
 

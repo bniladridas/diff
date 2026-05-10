@@ -7,6 +7,7 @@ import {
   Children,
   isValidElement,
   useCallback,
+  useDeferredValue,
   useState,
   useEffect,
   useMemo,
@@ -142,6 +143,7 @@ interface PullRequest {
   html_url: string;
   state: string;
   draft?: boolean;
+  merged?: boolean;
   labels?: Array<{
     name: string;
     color?: string;
@@ -152,6 +154,9 @@ interface PullRequest {
   head?: {
     ref: string;
     sha?: string;
+    repo?: {
+      full_name?: string;
+    } | null;
   };
 }
 
@@ -318,6 +323,7 @@ interface DiffE2EState {
   activeTab: "diff" | "discussion" | "checks" | "timeline";
   viewMode: "pulls" | "branches" | "code";
   isSidebarOpen: boolean;
+  isStreamFocus: boolean;
   showUpdates: boolean;
   authMenuOpen: boolean;
   githubWriteEnabled: boolean;
@@ -341,6 +347,7 @@ interface DiffE2EBridge {
   closeAuthMenu: () => void;
   openSidebar: () => void;
   closeSidebar: () => void;
+  setStreamFocus: (enabled: boolean) => void;
   submitDiscussionComment: (body: string) => Promise<void>;
   submitInlineReviewComment: (
     body: string,
@@ -353,6 +360,11 @@ interface DiffE2EBridge {
   ) => Promise<void>;
   getCodeFile: (path: string) => Promise<{ path: string; content: string; sha: string }>;
   commitCodeFile: (
+    path: string,
+    content: string,
+    message: string,
+  ) => Promise<{ path: string; sha?: string }>;
+  createCodeFile: (
     path: string,
     content: string,
     message: string,
@@ -390,8 +402,29 @@ const readStoredTheme = (): ThemePreference => {
     (localStorage.getItem(LOCAL_STORAGE_THEME_KEY) as ThemePreference) || "dark"
   );
 };
-const readStoredGitHubProviderToken = () => {
-  return localStorage.getItem(LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY);
+const readStoredGitHubProviderToken = (userId: string) => {
+  const saved = localStorage.getItem(LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY);
+  if (!saved) return null;
+
+  try {
+    const parsed = JSON.parse(saved) as {
+      user_id?: unknown;
+      token?: unknown;
+    };
+    if (parsed.user_id === userId && typeof parsed.token === "string") {
+      return parsed.token;
+    }
+  } catch {
+    // Ignore legacy token-only storage; it is not tied to a signed-in user.
+  }
+
+  return null;
+};
+const storeGitHubProviderToken = (userId: string, token: string) => {
+  localStorage.setItem(
+    LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY,
+    JSON.stringify({ user_id: userId, token }),
+  );
 };
 const readStoredPolicyAcknowledgement = () => {
   return localStorage.getItem(LOCAL_STORAGE_POLICY_ACKNOWLEDGED_KEY) === "true";
@@ -405,6 +438,7 @@ const clearAuthHashFromUrl = () => {
   );
 };
 const MAX_RECENT_REPOS = 6;
+const MAX_SAVED_PULLS = 25;
 const ALERT_TYPES = {
   NOTE: "border-sky-500/20 bg-sky-500/[0.06] text-sky-300",
   TIP: "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-300",
@@ -478,7 +512,7 @@ function Tooltip({
       {children}
       <span
         className={cn(
-          "pointer-events-none absolute z-[80] whitespace-nowrap rounded-[18px] border border-white/12 bg-panel px-4 py-2 text-[11px] font-medium tracking-[0.01em] text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.18)] opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
+          "pointer-events-none absolute z-[80] max-w-[min(16rem,calc(100vw-2rem))] whitespace-normal rounded-[18px] border border-white/12 bg-panel px-4 py-2 text-[11px] font-medium normal-case leading-relaxed tracking-[0.01em] text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.18)] opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
           tooltipClassName,
         )}
       >
@@ -929,6 +963,12 @@ const highlightCode = (code: string, path: string) => {
   return Prism.highlight(code, grammar, language);
 };
 
+const isInvalidRepoFilePath = (filePath: string) =>
+  filePath.startsWith("/") ||
+  filePath.endsWith("/") ||
+  filePath.includes("//") ||
+  filePath.split("/").some((segment) => segment === "..");
+
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches" | "code">("pulls");
   const [defaultRepo, setDefaultRepo] = useState(readStoredDefaultRepo);
@@ -944,6 +984,8 @@ export default function App() {
   const [selectedRepoFile, setSelectedRepoFile] = useState<RepoTreeItem | null>(null);
   const [repoFileContent, setRepoFileContent] = useState<string | null>(null);
   const [repoFileDraft, setRepoFileDraft] = useState("");
+  const [repoNewFilePath, setRepoNewFilePath] = useState("");
+  const [isCreatingRepoFile, setIsCreatingRepoFile] = useState(false);
   const [isEditingRepoFile, setIsEditingRepoFile] = useState(false);
   const [repoCommitMessage, setRepoCommitMessage] = useState("");
   const [repoTargetBranch, setRepoTargetBranch] = useState("");
@@ -994,15 +1036,14 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [isStreamFocus, setIsStreamFocus] = useState(false);
   const [stateFilter, setStateFilter] = useState<"open" | "closed" | "all">(
     "open",
   );
   const [theme, setTheme] = useState<ThemePreference>(readStoredTheme);
   const [authSession, setAuthSession] = useState<Session | null>(null);
   const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
-  const [githubProviderToken, setGitHubProviderToken] = useState<string | null>(
-    readStoredGitHubProviderToken,
-  );
+  const [githubProviderToken, setGitHubProviderToken] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMenuOpen, setAuthMenuOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -1028,6 +1069,8 @@ export default function App() {
   const [pullBodyDraft, setPullBodyDraft] = useState("");
   const [pullLabelsDraft, setPullLabelsDraft] = useState("");
   const [savingPullMeta, setSavingPullMeta] = useState(false);
+  const [pullActionInFlight, setPullActionInFlight] = useState<"update" | "merge" | "squash" | "rebase" | null>(null);
+  const [deletingHeadBranch, setDeletingHeadBranch] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [captchaInput, setCaptchaInput] = useState("");
@@ -1051,45 +1094,56 @@ export default function App() {
   const authUserIdRef = useRef<string | null>(null);
   const pendingSavedPullRef = useRef<SavedPullPreference | null>(null);
   const pendingSavedPullLoadRef = useRef<string | null>(null);
-  const diffRows = parseDiffRows(selectedFile?.patch);
-  const repoFiles = repoTree.filter((item) => item.type === "blob");
-  const normalizedRepoSearchQuery = repoSearchQuery.trim().toLowerCase();
-  const repoSearchResults: SearchResult[] = normalizedRepoSearchQuery
-    ? [
-        ...files
-          .filter((file) => {
-            const haystack = `${file.filename}\n${file.patch ?? ""}`.toLowerCase();
-            return haystack.includes(normalizedRepoSearchQuery);
-          })
-          .slice(0, 12)
-          .map((file) => ({
-            scope: "diff" as const,
-            path: file.filename,
-            detail: file.patch?.toLowerCase().includes(normalizedRepoSearchQuery)
-              ? "Diff content match"
-              : "Changed file path",
-            file,
-          })),
-        ...repoFiles
-          .filter((item) => item.path.toLowerCase().includes(normalizedRepoSearchQuery))
-          .slice(0, 24)
-          .map((item) => ({
-            scope: "repo" as const,
-            path: item.path,
-            detail: item.size != null ? `${item.size.toLocaleString()} bytes` : "Repository file",
-            repoItem: item,
-          })),
-      ]
-    : [];
-  const visibleRepoFiles = normalizedRepoSearchQuery
-    ? repoSearchResults
-        .filter((result) => result.scope === "repo" && result.repoItem)
-        .map((result) => result.repoItem!)
-    : repoFiles.slice(0, 250);
+  const deferredRepoSearchQuery = useDeferredValue(repoSearchQuery);
+  const canReadRemoteRepo = true;
+  const readAuthKey = `${authLoading ? "loading" : "ready"}:${authSession?.access_token ? "session" : "public"}:${githubProviderToken ? "github" : "none"}`;
+  const diffRows = useMemo(() => parseDiffRows(selectedFile?.patch), [selectedFile?.patch]);
+  const repoFiles = useMemo(() => repoTree.filter((item) => item.type === "blob"), [repoTree]);
+  const normalizedRepoSearchQuery = deferredRepoSearchQuery.trim().toLowerCase();
+  const repoSearchResults: SearchResult[] = useMemo(() => {
+    if (!normalizedRepoSearchQuery) return [];
+
+    const diffMatches = files
+      .filter((file) => {
+        const haystack = `${file.filename}\n${file.patch ?? ""}`.toLowerCase();
+        return haystack.includes(normalizedRepoSearchQuery);
+      })
+      .slice(0, 12)
+      .map((file) => ({
+        scope: "diff" as const,
+        path: file.filename,
+        detail: file.patch?.toLowerCase().includes(normalizedRepoSearchQuery)
+          ? "Diff content match"
+          : "Changed file path",
+        file,
+      }));
+
+    const repoMatches = repoFiles
+      .filter((item) => item.path.toLowerCase().includes(normalizedRepoSearchQuery))
+      .slice(0, 24)
+      .map((item) => ({
+        scope: "repo" as const,
+        path: item.path,
+        detail: item.size != null ? `${item.size.toLocaleString()} bytes` : "Repository file",
+        repoItem: item,
+      }));
+
+    return [...diffMatches, ...repoMatches];
+  }, [files, normalizedRepoSearchQuery, repoFiles]);
+  const visibleRepoFiles = useMemo(
+    () =>
+      normalizedRepoSearchQuery
+        ? repoSearchResults
+            .filter((result) => result.scope === "repo" && result.repoItem)
+            .map((result) => result.repoItem!)
+        : repoFiles.slice(0, 250),
+    [normalizedRepoSearchQuery, repoFiles, repoSearchResults],
+  );
   const highlightedRepoFileContent = useMemo(() => {
-    if (repoFileContent == null || !selectedRepoFile) return null;
-    return highlightCode(repoFileContent, selectedRepoFile.path);
-  }, [repoFileContent, selectedRepoFile?.path]);
+    const filePath = isCreatingRepoFile ? repoNewFilePath : selectedRepoFile?.path;
+    if (repoFileContent == null || !filePath) return null;
+    return highlightCode(repoFileContent, filePath);
+  }, [isCreatingRepoFile, repoFileContent, repoNewFilePath, selectedRepoFile?.path]);
   const releasedUpdates = APP_UPDATES.filter((update) => update.category !== "planned");
   const plannedUpdates = APP_UPDATES.filter((update) => update.category === "planned");
   const checkStats = checkRuns.reduce(
@@ -1136,6 +1190,20 @@ export default function App() {
     .map((label) => label.trim())
     .filter(Boolean);
   const activeRepoRef = repoTargetBranch.trim() || repoInfo?.default_branch || "HEAD";
+  const activeRepoFilePath = isCreatingRepoFile ? repoNewFilePath.trim() : selectedRepoFile?.path ?? "";
+  const canDeletePullHeadBranch =
+    selectedPull?.state === "closed" &&
+    selectedPull?.merged &&
+    selectedPull.head?.repo?.full_name === `${currentOwner}/${currentRepo}` &&
+    !!selectedPull.head?.ref;
+  const canResolvePullConflictsInCode =
+    selectedPull?.head?.repo?.full_name === `${currentOwner}/${currentRepo}` &&
+    !!selectedPull.head?.ref;
+  const canCommitRepoFile =
+    isEditingRepoFile &&
+    !!activeRepoFilePath &&
+    !!repoCommitMessage.trim() &&
+    (isCreatingRepoFile || repoFileDraft !== repoFileContent);
   const availableReviewLines = Array.from(
     new Set(
       diffRows
@@ -1248,7 +1316,7 @@ export default function App() {
           saved_at: new Date().toISOString(),
         },
         ...current,
-      ];
+      ].slice(0, MAX_SAVED_PULLS);
     });
   };
 
@@ -1348,11 +1416,12 @@ export default function App() {
   };
 
   const refreshReviewData = async (pullNumber: number) => {
+    const readHeaders = getReadHeaders();
     const [commentsRes, reviewCommentsRes, reviewsRes, timelineRes] = await Promise.all([
-      fetch(`/api/pulls/${pullNumber}/comments?owner=${currentOwner}&repo=${currentRepo}`),
-      fetch(`/api/pulls/${pullNumber}/review-comments?owner=${currentOwner}&repo=${currentRepo}`),
-      fetch(`/api/pulls/${pullNumber}/reviews?owner=${currentOwner}&repo=${currentRepo}`),
-      fetch(`/api/pulls/${pullNumber}/timeline?owner=${currentOwner}&repo=${currentRepo}`),
+      fetch(`/api/pulls/${pullNumber}/comments?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+      fetch(`/api/pulls/${pullNumber}/review-comments?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+      fetch(`/api/pulls/${pullNumber}/reviews?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+      fetch(`/api/pulls/${pullNumber}/timeline?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
     ]);
 
     if (commentsRes.ok) setComments(await commentsRes.json());
@@ -1616,6 +1685,117 @@ export default function App() {
       setWriteError(error instanceof Error ? error.message : "Failed to update pull request.");
     } finally {
       setSavingPullMeta(false);
+    }
+  };
+
+  const runPullUpdateBranch = async () => {
+    if (!selectedPull) return;
+
+    setPullActionInFlight("update");
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}/update-branch?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "POST",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            expected_head_sha: selectedPull.head?.sha,
+          }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Branch update failed with ${response.status}`);
+      }
+
+      setActiveTab("checks");
+      await refreshSelectedPullSnapshot(selectedPull.number);
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : "Failed to update branch.");
+    } finally {
+      setPullActionInFlight(null);
+    }
+  };
+
+  const runPullMerge = async (method: "merge" | "squash" | "rebase") => {
+    if (!selectedPull) return;
+
+    setPullActionInFlight(method);
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}/merge?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "PUT",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            method,
+            title: selectedPull.title,
+            sha: selectedPull.head?.sha,
+          }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Pull request ${method} failed with ${response.status}`);
+      }
+
+      await refreshSelectedPullSnapshot(selectedPull.number);
+      await fetchPulls(1, true);
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : `Failed to ${method} pull request.`);
+    } finally {
+      setPullActionInFlight(null);
+    }
+  };
+
+  const resolvePullConflictsInCode = async () => {
+    const headRef = selectedPull?.head?.ref;
+    if (!headRef || !canResolvePullConflictsInCode) {
+      setWriteError("Conflict resolution in Code view is only available for branches in this repository.");
+      return;
+    }
+
+    setWriteError(null);
+    setRepoTargetBranch(headRef);
+    setRepoNewBranchName("");
+    setRepoPullUrl(selectedPull?.html_url ?? null);
+    setViewMode("code");
+    setActiveTab("diff");
+    await fetchRepoTree(headRef);
+  };
+
+  const deletePullHeadBranch = async () => {
+    if (!selectedPull) return;
+
+    setDeletingHeadBranch(true);
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}/head-branch?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "DELETE",
+          headers: getWriteHeaders(),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Branch delete failed with ${response.status}`);
+      }
+
+      await refreshSelectedPullSnapshot(selectedPull.number);
+      await fetchPulls(1, true);
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : "Failed to delete branch.");
+    } finally {
+      setDeletingHeadBranch(false);
     }
   };
 
@@ -2036,6 +2216,7 @@ export default function App() {
         try {
           const response = await fetch(
             `/api/checks/${jobId}/logs?owner=${currentOwner}&repo=${currentRepo}`,
+            { headers: getReadHeaders() },
           );
           if (response.ok) {
             const text = await response.text();
@@ -2054,6 +2235,7 @@ export default function App() {
         try {
           const response = await fetch(
             `/api/checks/${selectedRunId}?owner=${currentOwner}&repo=${currentRepo}`,
+            { headers: getReadHeaders() },
           );
           if (response.ok) {
             const data = await response.json();
@@ -2144,7 +2326,15 @@ export default function App() {
       const session = data.session;
       setAuthSession(session);
       setAuthUser(session?.user ?? null);
-      const providerToken = session?.provider_token ?? readStoredGitHubProviderToken();
+      const providerToken = session
+        ? session.provider_token ?? readStoredGitHubProviderToken(session.user.id)
+        : null;
+      if (session?.provider_token) {
+        storeGitHubProviderToken(session.user.id, session.provider_token);
+      }
+      if (!session) {
+        localStorage.removeItem(LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY);
+      }
       setGitHubProviderToken(providerToken);
       if (session) {
         clearAuthHashFromUrl();
@@ -2160,12 +2350,11 @@ export default function App() {
       setAuthUser(session?.user ?? null);
       setAuthError(null);
       if (session?.provider_token) {
-        localStorage.setItem(
-          LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY,
-          session.provider_token,
-        );
+        storeGitHubProviderToken(session.user.id, session.provider_token);
         setGitHubProviderToken(session.provider_token);
         clearAuthHashFromUrl();
+      } else if (session) {
+        setGitHubProviderToken(readStoredGitHubProviderToken(session.user.id));
       } else if (event === "SIGNED_OUT") {
         localStorage.removeItem(LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY);
         setGitHubProviderToken(null);
@@ -2487,6 +2676,8 @@ export default function App() {
     setSelectedRepoFile(null);
     setRepoFileContent(null);
     setRepoFileDraft("");
+    setRepoNewFilePath("");
+    setIsCreatingRepoFile(false);
     setIsEditingRepoFile(false);
     setRepoCommitMessage("");
     setRepoTargetBranch("");
@@ -2555,6 +2746,7 @@ export default function App() {
         activeTab,
         viewMode,
         isSidebarOpen,
+        isStreamFocus,
         showUpdates,
         authMenuOpen,
         githubWriteEnabled: Boolean(githubProviderToken),
@@ -2616,6 +2808,7 @@ export default function App() {
       closeAuthMenu: () => setAuthMenuOpen(false),
       openSidebar: () => setIsSidebarOpen(true),
       closeSidebar: () => setIsSidebarOpen(false),
+      setStreamFocus: (enabled) => setIsStreamFocus(Boolean(enabled)),
       submitDiscussionComment: async (body) => {
         setWriteError(null);
         setAuthError(null);
@@ -2733,6 +2926,32 @@ export default function App() {
           sha: typeof data.content?.sha === "string" ? data.content.sha : undefined,
         };
       },
+      createCodeFile: async (filePath, content, message) => {
+        setWriteError(null);
+        setAuthError(null);
+        const branch = activeRepoRef;
+        const response = await fetch(
+          `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}`,
+          {
+            method: "PUT",
+            headers: getWriteHeaders(),
+            body: JSON.stringify({
+              path: filePath,
+              content,
+              message,
+              branch,
+            }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Server responded with ${response.status}`);
+        }
+        return {
+          path: filePath,
+          sha: typeof data.content?.sha === "string" ? data.content.sha : undefined,
+        };
+      },
       writeSessionFile: async () => {
         const { data: sessionData, error: sessionError } = supabase
           ? await supabase.auth.getSession()
@@ -2772,6 +2991,7 @@ export default function App() {
     defaultRepo,
     githubProviderToken,
     isSidebarOpen,
+    isStreamFocus,
     loading,
     preferencesLoading,
     preferencesSyncing,
@@ -2823,10 +3043,21 @@ export default function App() {
   }, [isResizing]);
 
   useEffect(() => {
+    if (!isVerified) return;
+    if (authLoading) return;
+    if (!canReadRemoteRepo) return;
     fetchRepoInfo();
-  }, [currentOwner, currentRepo]);
+  }, [currentOwner, currentRepo, isVerified, authLoading, canReadRemoteRepo, readAuthKey]);
 
   useEffect(() => {
+    if (!isVerified) return;
+    if (authLoading) return;
+    if (!canReadRemoteRepo) {
+      setLoading(false);
+      setLoadingMore(false);
+      setLoadingRepoTree(false);
+      return;
+    }
     setPage(1);
     if (viewMode === "pulls") {
       fetchPulls(1, true);
@@ -2835,13 +3066,15 @@ export default function App() {
     } else {
       fetchRepoTree();
     }
-  }, [viewMode, stateFilter, currentOwner, currentRepo]);
+  }, [viewMode, stateFilter, currentOwner, currentRepo, isVerified, authLoading, canReadRemoteRepo, readAuthKey]);
 
   const fetchRepoInfo = async () => {
+    if (!canReadRemoteRepo) return null;
     const requestKey = `${currentOwner}/${currentRepo}`;
     try {
       const res = await fetch(
         `/api/repo?owner=${currentOwner}&repo=${currentRepo}`,
+        { headers: getReadHeaders() },
       );
       if (res.ok) {
         const data: RepoInfo = await res.json();
@@ -2863,12 +3096,18 @@ export default function App() {
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
     setError(null);
+    if (!canReadRemoteRepo) {
+      setLoading(false);
+      setLoadingMore(false);
+      return;
+    }
     try {
       const comparisonRepoInfo = repoInfo ?? (await fetchRepoInfo());
       if (repoKeyRef.current !== requestKey) return;
 
       const response = await fetch(
         `/api/branches?page=${pageNum}&per_page=30&owner=${currentOwner}&repo=${currentRepo}`,
+        { headers: getReadHeaders() },
       );
       if (repoKeyRef.current !== requestKey) return;
       if (!response.ok) {
@@ -2902,7 +3141,7 @@ export default function App() {
     }
   };
 
-  const fetchRepoTree = async () => {
+  const fetchRepoTree = async (refOverride?: string) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
     setLoading(true);
     setLoadingRepoTree(true);
@@ -2920,10 +3159,15 @@ export default function App() {
     setCheckRuns([]);
     setCheckSummary(null);
     setActiveTab("diff");
+    if (!canReadRemoteRepo) {
+      setLoading(false);
+      setLoadingRepoTree(false);
+      return;
+    }
 
     try {
       const comparisonRepoInfo = repoInfo ?? (await fetchRepoInfo());
-      const ref = repoTargetBranch.trim() || comparisonRepoInfo?.default_branch || "HEAD";
+      const ref = refOverride?.trim() || repoTargetBranch.trim() || comparisonRepoInfo?.default_branch || "HEAD";
       const response = await fetch(
         `/api/repo/tree?owner=${currentOwner}&repo=${currentRepo}&ref=${encodeURIComponent(ref)}`,
         { headers: getReadHeaders() },
@@ -2968,7 +3212,10 @@ export default function App() {
     ref = activeRepoRef,
     requestKey = `${currentOwner}/${currentRepo}`,
   ) => {
+    if (!canReadRemoteRepo) return;
     setSelectedRepoFile(file);
+    setIsCreatingRepoFile(false);
+    setRepoNewFilePath("");
     setLoadingRepoFile(true);
     setRepoFileContent(null);
 
@@ -2999,6 +3246,17 @@ export default function App() {
         setLoadingRepoFile(false);
       }
     }
+  };
+
+  const startCreateRepoFile = () => {
+    setWriteError(null);
+    setSelectedRepoFile(null);
+    setRepoFileContent("");
+    setRepoFileDraft("");
+    setRepoNewFilePath("");
+    setRepoCommitMessage("Create file");
+    setIsCreatingRepoFile(true);
+    setIsEditingRepoFile(true);
   };
 
   const createRepoBranch = async () => {
@@ -3035,9 +3293,9 @@ export default function App() {
       }
 
       setRepoTargetBranch(name);
-      setRepoPullTitle((current) => current || `Update ${selectedRepoFile?.path ?? currentRepo}`);
+      setRepoPullTitle((current) => current || `Update ${activeRepoFilePath || currentRepo}`);
       setRepoPullBody((current) => current || "Created from DIFF Code view.");
-      if (selectedRepoFile) {
+      if (selectedRepoFile && !isCreatingRepoFile) {
         await loadRepoFile(selectedRepoFile, name);
       }
     } catch (err) {
@@ -3067,9 +3325,20 @@ export default function App() {
   };
 
   const commitRepoFile = async () => {
-    if (!selectedRepoFile || repoFileContent == null) return;
+    if (repoFileContent == null) return;
+    const filePath = activeRepoFilePath;
     const message = repoCommitMessage.trim();
     const branch = repoTargetBranch.trim() || repoInfo?.default_branch;
+
+    if (!filePath) {
+      setWriteError("File path is required.");
+      return;
+    }
+
+    if (isInvalidRepoFilePath(filePath)) {
+      setWriteError("Use a relative file path.");
+      return;
+    }
 
     if (!message) {
       setWriteError("Commit message is required.");
@@ -3081,7 +3350,7 @@ export default function App() {
       return;
     }
 
-    if (repoFileDraft === repoFileContent) {
+    if (!isCreatingRepoFile && repoFileDraft === repoFileContent) {
       setWriteError("No file changes to commit.");
       return;
     }
@@ -3090,18 +3359,18 @@ export default function App() {
     setWriteError(null);
 
     try {
-      const currentSha = await getRepoFileSha(selectedRepoFile.path, branch);
+      const currentSha = isCreatingRepoFile ? null : await getRepoFileSha(filePath, branch);
       const response = await fetch(
         `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}`,
         {
           method: "PUT",
           headers: getWriteHeaders(),
           body: JSON.stringify({
-            path: selectedRepoFile.path,
+            path: filePath,
             content: repoFileDraft,
             message,
             branch,
-            sha: currentSha,
+            ...(currentSha ? { sha: currentSha } : {}),
           }),
         },
       );
@@ -3112,20 +3381,28 @@ export default function App() {
       }
 
       const nextSha = data.content?.sha;
+      const nextFile: RepoTreeItem = {
+        path: filePath,
+        mode: "100644",
+        type: "blob",
+        sha: typeof nextSha === "string" ? nextSha : selectedRepoFile?.sha ?? "",
+        size: new Blob([repoFileDraft]).size,
+        url: "",
+      };
       if (typeof nextSha === "string") {
-        setSelectedRepoFile((current) =>
-          current ? { ...current, sha: nextSha } : current,
-        );
         setRepoTree((current) =>
-          current.map((item) =>
-            item.path === selectedRepoFile.path ? { ...item, sha: nextSha } : item,
-          ),
+          current.some((item) => item.path === filePath)
+            ? current.map((item) => (item.path === filePath ? { ...item, sha: nextSha, size: nextFile.size } : item))
+            : [...current, nextFile].sort((a, b) => a.path.localeCompare(b.path)),
         );
       }
 
+      setSelectedRepoFile(nextFile);
       setRepoFileContent(repoFileDraft);
+      setRepoNewFilePath("");
+      setIsCreatingRepoFile(false);
       setIsEditingRepoFile(false);
-      setRepoCommitMessage(`Update ${selectedRepoFile.path}`);
+      setRepoCommitMessage(`Update ${filePath}`);
       if (branch !== repoInfo?.default_branch) {
         setRepoPullTitle((current) => current || message);
       }
@@ -3220,9 +3497,11 @@ export default function App() {
       const [filesRes, commitsRes] = await Promise.all([
         fetch(
           `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/files?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: getReadHeaders() },
         ),
         fetch(
           `/api/compare/${encodeURIComponent(base)}/${encodeURIComponent(head)}/commits?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: getReadHeaders() },
         ),
       ]);
       if (repoKeyRef.current !== requestKey) return;
@@ -3254,10 +3533,17 @@ export default function App() {
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
     setError(null);
+    if (!canReadRemoteRepo) {
+      setLoading(false);
+      setLoadingMore(false);
+      return;
+    }
 
     try {
+      const readHeaders = getReadHeaders();
       const response = await fetch(
         `/api/pulls?state=${stateFilter}&page=${pageNum}&per_page=30&owner=${currentOwner}&repo=${currentRepo}`,
+        { headers: readHeaders },
       );
       if (repoKeyRef.current !== requestKey) return;
       if (!response.ok) {
@@ -3286,7 +3572,9 @@ export default function App() {
         }
         if (message.includes("rate limit")) {
           throw new Error(
-            "GitHub API rate limit exceeded. Add a GITHUB_TOKEN in your local .env or shell environment to increase limits.",
+            githubProviderToken
+              ? "GitHub API rate limit exceeded. Sign out and sign in again to refresh GitHub access."
+              : "GitHub access is not ready. Sign in with GitHub to load pull requests.",
           );
         }
         throw new Error(message);
@@ -3363,34 +3651,56 @@ export default function App() {
     setCheckSummary(null);
     setActiveTab("diff");
     try {
-      const [filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes, timelineRes, editsRes] = await Promise.all([
+      const readHeaders = getReadHeaders();
+      const [pullRes, filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes, timelineRes, editsRes] = await Promise.all([
+        fetch(
+          `/api/pulls/${pull.number}?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
+        ),
         fetch(
           `/api/pulls/${pull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
         fetch(
           `/api/pulls/${pull.number}/comments?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
         fetch(
           `/api/pulls/${pull.number}/review-comments?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
         fetch(
           `/api/pulls/${pull.number}/checks?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
         fetch(
           `/api/pulls/${pull.number}/commits?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
         fetch(
           `/api/pulls/${pull.number}/reviews?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
         fetch(
           `/api/pulls/${pull.number}/timeline?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
         fetch(
           `/api/pulls/${pull.number}/edits?owner=${currentOwner}&repo=${currentRepo}`,
+          { headers: readHeaders },
         ),
       ]);
 
       if (repoKeyRef.current !== requestKey) return;
+
+      if (pullRes.ok) {
+        const pullData = await pullRes.json();
+        const nextPull = { ...pull, ...pullData } as PullRequest;
+        setSelectedPull(nextPull);
+        setPulls((current) =>
+          current.map((item) => (item.number === nextPull.number ? nextPull : item)),
+        );
+      }
 
       // Process Files
       if (filesRes.ok) {
@@ -3433,6 +3743,7 @@ export default function App() {
     const requestKey = `${currentOwner}/${currentRepo}`;
 
     try {
+      const readHeaders = getReadHeaders();
       const [
         pullRes,
         filesRes,
@@ -3444,15 +3755,15 @@ export default function App() {
         timelineRes,
         editsRes,
       ] = await Promise.all([
-        fetch(`/api/pulls/${pullNumber}?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/files?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/comments?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/review-comments?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/checks?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/commits?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/reviews?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/timeline?owner=${currentOwner}&repo=${currentRepo}`),
-        fetch(`/api/pulls/${pullNumber}/edits?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/files?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/comments?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/review-comments?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/checks?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/commits?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/reviews?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/timeline?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
+        fetch(`/api/pulls/${pullNumber}/edits?owner=${currentOwner}&repo=${currentRepo}`, { headers: readHeaders }),
       ]);
 
       if (repoKeyRef.current !== requestKey) return;
@@ -3498,7 +3809,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (typeof window === "undefined" || viewMode !== "pulls") return;
+    if (typeof window === "undefined" || !isVerified || viewMode !== "pulls") return;
 
     let refreshInFlight = false;
     let refreshQueued = false;
@@ -3581,7 +3892,7 @@ export default function App() {
         socket?.close();
       }
     };
-  }, [currentOwner, currentRepo, selectedPull?.number, stateFilter, viewMode]);
+  }, [currentOwner, currentRepo, isVerified, selectedPull?.number, stateFilter, viewMode]);
 
   if (!isVerified) {
     return (
@@ -3633,22 +3944,26 @@ export default function App() {
 
       {/* Header */}
       <header className="fixed top-0 w-full z-50 border-b border-white/5 bg-onyx/90 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 lg:px-12 h-14 lg:h-20 flex items-center justify-between gap-2 lg:gap-2.5">
+        <div className="max-w-7xl mx-auto px-4 lg:px-12 h-12 lg:h-14 flex items-center justify-between gap-2 lg:gap-2.5">
           <div className="flex items-center gap-2 lg:gap-4 min-w-0">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               aria-label={isSidebarOpen ? "Close navigation panel" : "Open navigation panel"}
-              className="lg:hidden p-1 -ml-1 text-white/40 hover:text-brand-orange transition-colors"
+              className="group lg:hidden p-1 -ml-1 text-white/40 hover:text-brand-orange transition-colors"
             >
               <Activity
                 className={cn(
-                  "w-4 h-4 sm:w-5 h-5 transition-transform",
+                  "w-4 h-4 sm:w-5 h-5 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]",
                   isSidebarOpen && "rotate-90",
                 )}
               />
             </button>
             <div className="flex items-center gap-2 lg:gap-3 min-w-0">
-              <div className="w-3 h-3 bg-white/20 shrink-0" />
+              <img
+                src={COCCINELLA_LOGO_URL}
+                alt=""
+                className="h-4 w-4 shrink-0 rounded-sm object-contain opacity-70"
+              />
               <div className="flex flex-col min-w-0">
                 <h1 className="text-base lg:text-xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
                   DIFF
@@ -3660,8 +3975,9 @@ export default function App() {
             </div>
           </div>
 
-            <div className="flex items-center gap-2.5 lg:gap-3">
-              <div className="flex items-center gap-2 lg:gap-3">
+            <div className="flex items-center gap-2 lg:gap-2.5">
+              <div className="flex items-center gap-1.5 lg:gap-2">
+                <Tooltip content={`Theme: ${theme}`}>
                 <button
                   data-e2e="theme-toggle"
                   onClick={() => {
@@ -3670,44 +3986,34 @@ export default function App() {
                   const nextIndex = (currentIndex + 1) % themes.length;
                   setTheme(themes[nextIndex]);
                 }}
-                className="flex items-center gap-2 lg:gap-2.5 group p-1.5 lg:p-2 hover:bg-white/5 transition-all rounded-lg"
+                  className="group flex h-9 items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.012] px-2 transition-all hover:border-white/[0.08] hover:bg-white/[0.025]"
               >
+                <Palette className="h-3.5 w-3.5 text-white/25 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:rotate-[-2deg] group-hover:scale-[1.04] group-hover:text-white/45" />
                 <div className="flex gap-1 px-0.5">
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "dark" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "midnight" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "grey" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                   <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "graphite" ? "bg-brand-orange scale-110" : "bg-white/10")} />
                 </div>
-                <div className="hidden sm:block w-[34px] lg:w-[46px] overflow-hidden">
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.span
-                      key={theme}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 0.4, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      whileHover={{ opacity: 1 }}
-                      className="block text-[8px] uppercase tracking-[0.28em] font-bold text-white transition-opacity text-left text-nowrap"
-                    >
-                      {theme === "dark" ? "Onyx" : theme === "midnight" ? "Night" : theme === "grey" ? "Grey" : "Graph"}
-                    </motion.span>
-                  </AnimatePresence>
-                </div>
               </button>
+                </Tooltip>
 
+                <Tooltip content="Updates">
                 <button
                   data-e2e="updates-open"
                   onClick={() => {
                     setShowUpdates(true);
                   setHasNewUpdates(false);
                 }}
-                className="relative flex items-center gap-2 lg:gap-3 transition-all group"
+                  className="group relative flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.04] bg-white/[0.012] transition-all hover:border-white/[0.08] hover:bg-white/[0.025]"
               >
                 <div className={cn(
-                  "w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full",
+                  "absolute right-2 top-2 h-1.5 w-1.5 rounded-full",
                   hasNewUpdates ? "bg-brand-orange animate-pulse" : "bg-white/10 group-hover:bg-white/30"
                 )} />
-                <span className="hidden sm:inline text-[8px] uppercase tracking-[0.2em] font-medium text-white/20 group-hover:text-white/40">Updates</span>
+                  <Package className="h-3.5 w-3.5 text-white/25 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:rotate-[-2deg] group-hover:scale-[1.04] group-hover:text-white/45" />
                 </button>
+                </Tooltip>
               </div>
 
               <div className="relative shrink-0" ref={authMenuRef}>
@@ -3719,16 +4025,16 @@ export default function App() {
                         setAuthMenuOpen((current) => !current);
                         setAuthError(null);
                       }}
-                      className="flex max-w-[168px] items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.015] px-2 py-1.5 text-left transition-colors hover:border-white/[0.08] hover:bg-white/[0.03] lg:max-w-[182px]"
+                      className="group flex max-w-[168px] items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.015] px-2 py-1.5 text-left transition-colors hover:border-white/[0.08] hover:bg-white/[0.03] lg:max-w-[182px]"
                     >
                       {authAvatarUrl ? (
                         <img
                           src={authAvatarUrl}
                           alt={authDisplayName}
-                          className="h-6 w-6 rounded-full object-cover"
+                          className="h-6 w-6 rounded-full object-cover transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.03]"
                         />
                       ) : (
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/5 text-white/40">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/5 text-white/40 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.03]">
                           <User className="h-3.5 w-3.5" />
                         </div>
                       )}
@@ -3749,9 +4055,9 @@ export default function App() {
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 6 }}
-                          className="absolute right-0 top-[calc(100%+10px)] w-[220px] rounded-xl border border-white/8 bg-panel/95 p-3 shadow-2xl backdrop-blur-md"
+                          className="absolute right-0 top-[calc(100%+8px)] w-[220px] rounded-xl border border-white/8 bg-panel/95 p-2.5 shadow-2xl backdrop-blur-md"
                         >
-                          <div className="space-y-1 border-b border-white/5 pb-2.5">
+                          <div className="space-y-0.5 border-b border-white/5 pb-2">
                             <div className="text-[9px] uppercase tracking-[0.24em] text-white/20">
                               Signed in
                             </div>
@@ -3768,20 +4074,20 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="space-y-2.5 border-b border-white/5 py-2.5">
+                          <div className="space-y-2 border-b border-white/5 py-2">
                             <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.2em] text-white/20">
                               <span>Saved Pulls</span>
                               {savedPulls.length > 0 && <span>{savedPulls.length}</span>}
                             </div>
                             {savedPulls.length > 0 ? (
-                              <div className="space-y-2">
-                                {savedPulls.slice(0, 3).map((pull) => (
+                              <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                                {savedPulls.slice(0, MAX_SAVED_PULLS).map((pull) => (
                                   <a
                                     key={`${pull.owner}/${pull.repo}#${pull.pull_number}`}
                                     href={pull.html_url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="block rounded-lg px-2 py-2 text-white/45 transition-colors hover:bg-white/[0.03] hover:text-white/75"
+                                    className="block rounded-lg px-2 py-1.5 text-white/45 transition-colors hover:bg-white/[0.03] hover:text-white/75"
                                   >
                                     <div className="truncate text-[10px] font-medium">
                                       {pull.title}
@@ -3799,13 +4105,13 @@ export default function App() {
                             )}
                           </div>
 
-                          <div className="pt-2.5">
-                            <div className="mb-2.5 grid grid-cols-2 gap-1.5">
+                          <div className="pt-2">
+                            <div className="mb-2 grid grid-cols-2 gap-1">
                               <a
                                 href="https://github.com/bniladridas/diff/blob/main/docs/legal/privacy.md"
                                 target="_blank"
                                 rel="noreferrer"
-                                className="rounded-lg px-2 py-2 text-[9px] font-medium uppercase tracking-[0.18em] text-white/25 transition-colors hover:bg-white/[0.03] hover:text-white/55"
+                                className="rounded-lg px-2 py-1.5 text-[9px] font-medium uppercase tracking-[0.18em] text-white/25 transition-colors hover:bg-white/[0.03] hover:text-white/55"
                               >
                                 Privacy
                               </a>
@@ -3813,18 +4119,18 @@ export default function App() {
                                 href="https://github.com/bniladridas/diff/blob/main/docs/legal/terms.md"
                                 target="_blank"
                                 rel="noreferrer"
-                                className="rounded-lg px-2 py-2 text-[9px] font-medium uppercase tracking-[0.18em] text-white/25 transition-colors hover:bg-white/[0.03] hover:text-white/55"
+                                className="rounded-lg px-2 py-1.5 text-[9px] font-medium uppercase tracking-[0.18em] text-white/25 transition-colors hover:bg-white/[0.03] hover:text-white/55"
                               >
                                 Terms
                               </a>
                             </div>
-                            <div className="mb-2 border-t border-white/5" />
+                            <div className="mb-1.5 border-t border-white/5" />
                             {recentRepos.length > 0 && (
                               <button
                                 type="button"
                                 onClick={clearRecentRepos}
                                 aria-label="Clear recent repositories"
-                                className="mb-1.5 flex w-full items-center justify-between rounded-lg px-2 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
+                                className="mb-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
                               >
                                 Clear repos
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -3832,7 +4138,7 @@ export default function App() {
                             )}
                             <button
                               onClick={signOut}
-                              className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
+                              className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
                             >
                               Sign Out
                               <LogOut className="h-3.5 w-3.5" />
@@ -3854,9 +4160,9 @@ export default function App() {
                       <button
                         onClick={beginGitHubSignIn}
                         disabled={!isSupabaseConfigured || authLoading}
-                        className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="group flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
                       >
-                        <Lock className={cn("h-3.5 w-3.5", authLoading && isSupabaseConfigured && "animate-pulse")} />
+                        <Lock className={cn("h-3.5 w-3.5 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:rotate-[-2deg] group-hover:scale-[1.04]", authLoading && isSupabaseConfigured && "animate-pulse")} />
                         <span className="hidden sm:inline">
                           {authLoading ? "Auth" : "Sign In"}
                         </span>
@@ -3878,59 +4184,59 @@ export default function App() {
                 )}
               </div>
 
-            <div className="hidden lg:flex items-center gap-5 text-[9px] font-medium uppercase tracking-[0.22em] text-white/22">
+            <div className="hidden lg:flex items-center text-[9px] font-medium uppercase tracking-[0.22em] text-white/22">
+              <Tooltip content="Open GitHub repo">
               <a
                 href="https://github.com/bniladridas/diff"
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1.5 hover:text-white/42 transition-colors"
+                className="group flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.04] bg-white/[0.012] transition-colors hover:border-white/[0.08] hover:bg-white/[0.025] hover:text-white/42"
               >
-                GitHub <ExternalLink className="w-3 h-3" />
+                <ExternalLink className="h-3.5 w-3.5 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:scale-[1.04]" />
               </a>
+              </Tooltip>
             </div>
 
+            <Tooltip content={isSidebarHidden ? "Show panel" : "Hide panel"}>
             <button
               onClick={() => setIsSidebarHidden(!isSidebarHidden)}
-              className="hidden lg:flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/22 hover:text-brand-orange/72 transition-colors min-w-[88px] justify-end"
+              className="group hidden h-9 w-9 items-center justify-center rounded-lg border border-white/[0.04] bg-white/[0.012] text-white/25 transition-colors hover:border-white/[0.08] hover:bg-white/[0.025] hover:text-brand-orange/72 lg:flex"
             >
-              <div className="relative h-4 w-full flex items-center justify-end">
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.span
-                    key={isSidebarHidden ? "show" : "hide"}
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    className="absolute right-0 whitespace-nowrap"
-                  >
-                    {isSidebarHidden ? "Show" : "Hide"} Panel
-                  </motion.span>
-                </AnimatePresence>
-              </div>
+              <ChevronRight
+                className={cn(
+                  "h-4 w-4 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]",
+                  isSidebarHidden ? "rotate-0" : "rotate-180",
+                )}
+              />
             </button>
+            </Tooltip>
           </div>
 
-          <button
-            onClick={() =>
-              viewMode === "pulls"
-                ? fetchPulls(1, true)
-                : viewMode === "branches"
-                  ? fetchBranches()
-                  : fetchRepoTree()
-            }
-            className="p-2 lg:p-2.5 border border-white/[0.05] bg-white/[0.01] hover:border-white/[0.1] hover:bg-white/[0.025] transition-all group shrink-0 rounded-lg"
-            title={
+          <Tooltip
+            content={
               viewMode === "pulls" && liveLastUpdate
                 ? `Refresh. Last live update ${new Date(liveLastUpdate).toLocaleTimeString()}`
                 : "Refresh"
             }
           >
-            <RefreshCw
-              className={cn(
-                "w-3.5 h-3.5 lg:w-4 lg:h-4 text-white/40 group-hover:text-brand-orange transition-colors",
-                loading && "animate-spin",
-              )}
-            />
-          </button>
+            <button
+              onClick={() =>
+                viewMode === "pulls"
+                  ? fetchPulls(1, true)
+                  : viewMode === "branches"
+                    ? fetchBranches()
+                    : fetchRepoTree()
+              }
+              className="p-2 lg:p-2.5 border border-white/[0.05] bg-white/[0.01] hover:border-white/[0.1] hover:bg-white/[0.025] transition-all group shrink-0 rounded-lg"
+            >
+              <RefreshCw
+                className={cn(
+                  "w-3.5 h-3.5 lg:w-4 lg:h-4 text-white/40 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:rotate-[-8deg] group-hover:scale-[1.04] group-hover:text-brand-orange",
+                  loading && "animate-spin",
+                )}
+              />
+            </button>
+          </Tooltip>
         </div>
       </header>
 <AnimatePresence>
@@ -3946,7 +4252,7 @@ export default function App() {
 </AnimatePresence>
       <main
         className={cn(
-          "pt-14 lg:pt-20 h-screen flex overflow-hidden bg-onyx",
+          "pt-12 lg:pt-14 h-screen flex overflow-hidden bg-onyx",
           isResizing && "select-none cursor-col-resize",
         )}
         style={
@@ -3963,7 +4269,7 @@ export default function App() {
             "border-r border-white/5 bg-panel/90 backdrop-blur-md flex flex-col relative group overflow-hidden",
             isSidebarOpen ? "z-50" : "z-40",
             !isResizing && "transition-all duration-300 ease-in-out",
-            "fixed lg:relative top-14 lg:top-0 bottom-0 left-0 lg:bottom-auto lg:inset-auto bg-onyx lg:bg-panel/90",
+            "fixed lg:relative top-12 lg:top-0 bottom-0 left-0 lg:bottom-auto lg:inset-auto bg-onyx lg:bg-panel/90",
             isSidebarOpen
               ? "w-[280px] sm:w-[320px] translate-x-0"
               : "w-0 lg:w-auto -translate-x-full lg:translate-x-0",
@@ -3971,7 +4277,8 @@ export default function App() {
           )}
         >
           <div className="flex flex-col h-full overflow-hidden w-[280px] sm:w-[320px] lg:w-[var(--sidebar-width)]">
-            <div className="p-4 lg:p-5 border-b border-white/5 space-y-4">
+            {!isStreamFocus && (
+            <div className="border-b border-white/5 px-4 py-3 lg:px-4 lg:py-3 space-y-3">
               {/* Repository Switcher moved here */}
               <div className="flex items-center gap-2 min-w-0">
                 {showRepoInput ? (
@@ -4043,7 +4350,7 @@ export default function App() {
                       )}
 
                       {(defaultRepo.owner !== SYSTEM_OWNER || defaultRepo.repo !== SYSTEM_REPO) && (
-                        <Tooltip content="Clear custom default and reset to system default">
+                        <Tooltip content="Reset to system default">
                           <button
                             onClick={() => {
                               const systemDefault = { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
@@ -4081,17 +4388,17 @@ export default function App() {
                   </button>
                   {isSidebarAccountOpen &&
                     (authUser ? (
-                      <div className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/15 px-3 py-2.5">
-                        <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="flex items-center justify-between gap-2.5 rounded-xl border border-white/5 bg-black/15 px-2.5 py-2">
+                        <div className="flex min-w-0 items-center gap-2">
                           {authAvatarUrl ? (
                             <img
                               src={authAvatarUrl}
                               alt={authDisplayName}
-                              className="h-7 w-7 rounded-full object-cover"
+                              className="h-6 w-6 rounded-full object-cover"
                             />
                           ) : (
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-white/35">
-                              <User className="h-3.5 w-3.5" />
+                            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/5 text-white/35">
+                              <User className="h-3 w-3" />
                             </div>
                           )}
                           <div className="min-w-0">
@@ -4105,7 +4412,7 @@ export default function App() {
                         </div>
                         <button
                           onClick={signOut}
-                          className="shrink-0 rounded-md border border-white/5 px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-white/30 transition-colors hover:border-white/10 hover:text-white/60"
+                          className="shrink-0 rounded-md border border-white/5 px-2 py-1 text-[8px] uppercase tracking-[0.16em] text-white/30 transition-colors hover:border-white/10 hover:text-white/60"
                         >
                           Sign out
                         </button>
@@ -4114,7 +4421,7 @@ export default function App() {
                       <button
                         onClick={beginGitHubSignIn}
                         disabled={!isSupabaseConfigured || authLoading}
-                        className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-black/15 px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-black/15 px-2.5 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <div>
                           <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-white/50">
@@ -4192,17 +4499,17 @@ export default function App() {
                     />
                   </button>
                   {isSidebarSavedPullsOpen && (
-                    <div className="space-y-1.5">
-                      {savedPulls.slice(0, 4).map((savedPull) => (
+                    <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+                      {savedPulls.slice(0, MAX_SAVED_PULLS).map((savedPull) => (
                         <button
                           key={`${savedPull.owner}/${savedPull.repo}#${savedPull.pull_number}`}
                           onClick={() => openSavedPull(savedPull)}
-                          className="w-full rounded-xl border border-white/5 bg-black/15 px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02]"
+                          className="w-full rounded-lg border border-white/5 bg-black/15 px-2.5 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02]"
                         >
                           <div className="truncate text-[9px] font-medium text-white/55">
                             {savedPull.title}
                           </div>
-                          <div className="truncate pt-1 text-[8px] uppercase tracking-[0.16em] text-white/18">
+                          <div className="truncate pt-0.5 text-[8px] uppercase tracking-[0.14em] text-white/18">
                             {savedPull.owner}/{savedPull.repo} #{savedPull.pull_number}
                           </div>
                         </button>
@@ -4215,7 +4522,7 @@ export default function App() {
                 <button
                   onClick={() => setViewMode("pulls")}
                   className={cn(
-                    "py-2 text-[9px] font-bold uppercase tracking-[0.2em] transition-all relative rounded-lg",
+                    "py-1.5 text-[9px] font-bold uppercase tracking-[0.18em] transition-all relative rounded-lg",
                     viewMode === "pulls"
                       ? "bg-white/[0.04] text-white"
                       : "text-white/25 hover:text-white/45",
@@ -4232,7 +4539,7 @@ export default function App() {
                 <button
                   onClick={() => setViewMode("branches")}
                   className={cn(
-                    "py-2 text-[9px] font-bold uppercase tracking-[0.2em] transition-all relative rounded-lg",
+                    "py-1.5 text-[9px] font-bold uppercase tracking-[0.18em] transition-all relative rounded-lg",
                     viewMode === "branches"
                       ? "bg-white/[0.04] text-white"
                       : "text-white/25 hover:text-white/45",
@@ -4252,7 +4559,7 @@ export default function App() {
                     setViewMode("code");
                   }}
                   className={cn(
-                    "py-2 text-[9px] font-bold uppercase tracking-[0.2em] transition-all relative rounded-lg",
+                    "py-1.5 text-[9px] font-bold uppercase tracking-[0.18em] transition-all relative rounded-lg",
                     viewMode === "code"
                       ? "bg-white/[0.04] text-white"
                       : "text-white/25 hover:text-white/45",
@@ -4268,8 +4575,9 @@ export default function App() {
                 </button>
               </div>
             </div>
+            )}
 
-            <div className="px-4 lg:px-5 py-4 border-b border-white/5 space-y-4 shrink-0">
+            <div className={cn("px-4 lg:px-4 border-b border-white/5 shrink-0", isStreamFocus ? "py-2.5 space-y-0" : "py-3 space-y-3")}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-white/20">
                   <Activity className="w-3 h-3" />
@@ -4278,13 +4586,25 @@ export default function App() {
                   </h2>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="px-2 py-1 text-[9px] font-mono text-white/45 bg-white/[0.03] border border-white/5 rounded-md">
+                  <span className="px-2 py-0.5 text-[9px] font-mono text-white/45 bg-white/[0.03] border border-white/5 rounded-md">
                     {viewMode === "pulls"
                       ? pulls.length
                       : viewMode === "branches"
                         ? branches.length
                         : repoFiles.length}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsStreamFocus((current) => !current)}
+                    className={cn(
+                      "rounded-md border px-2 py-0.5 text-[8px] uppercase tracking-[0.16em] transition-colors",
+                      isStreamFocus
+                        ? "border-brand-orange/20 text-brand-orange/75 hover:text-brand-orange"
+                        : "border-white/5 text-white/25 hover:border-white/10 hover:text-white/55",
+                    )}
+                  >
+                    {isStreamFocus ? "Show" : "Focus"}
+                  </button>
                   <button
                     onClick={() => setIsSidebarOpen(false)}
                     className="lg:hidden"
@@ -4294,14 +4614,14 @@ export default function App() {
                 </div>
               </div>
 
-              {viewMode === "pulls" && (
+              {!isStreamFocus && viewMode === "pulls" && (
                 <div className="flex border border-white/5 p-1 bg-black/20 rounded-xl">
                   {(["open", "closed", "all"] as const).map((s) => (
                     <button
                       key={s}
                       onClick={() => setStateFilter(s)}
                       className={cn(
-                        "flex-1 py-2 text-[8px] lg:text-[10px] uppercase tracking-[0.24em] font-bold transition-all rounded-lg",
+                        "flex-1 py-1.5 text-[8px] lg:text-[10px] uppercase tracking-[0.22em] font-bold transition-all rounded-lg",
                         stateFilter === s
                           ? "bg-white/[0.05] text-white"
                           : "text-white/30 hover:text-white/60",
@@ -4313,6 +4633,7 @@ export default function App() {
                 </div>
               )}
 
+              {!isStreamFocus && (
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-white/18" />
                 <input
@@ -4320,9 +4641,10 @@ export default function App() {
                   value={repoSearchQuery}
                   onChange={(event) => setRepoSearchQuery(event.target.value)}
                   placeholder={viewMode === "code" ? "Search repository" : "Search diffs"}
-                  className="w-full rounded-xl border border-white/5 bg-black/20 py-2.5 pl-8 pr-3 text-[10px] font-mono text-white/60 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                  className="w-full rounded-xl border border-white/5 bg-black/20 py-2 pl-8 pr-3 text-[10px] font-mono text-white/60 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
                 />
               </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -4393,7 +4715,7 @@ export default function App() {
                             setIsSidebarOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left p-5 lg:p-6 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
+                            "w-full text-left p-4 lg:p-4 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
                             selectedPull?.id === pull.id
                               ? "bg-white/[0.03] border-white/6"
                               : "",
@@ -4406,7 +4728,7 @@ export default function App() {
                             />
                           )}
 
-                          <div className="space-y-2.5">
+                          <div className="space-y-2">
                             <div className="flex items-center justify-between text-[9px] font-mono text-white/30">
                               <span className="flex items-center gap-2">
                                 #{pull.number}
@@ -4423,7 +4745,7 @@ export default function App() {
 
                             <h3
                               className={cn(
-                                "font-serif italic text-base lg:text-lg leading-tight transition-colors break-words",
+                                "font-serif italic text-base leading-tight transition-colors break-words",
                                 selectedPull?.id === pull.id
                                   ? "text-white"
                                   : "text-white/60 group-hover:text-white",
@@ -4432,7 +4754,7 @@ export default function App() {
                               {pull.title}
                             </h3>
 
-                            <div className="flex items-center gap-2 pt-0.5">
+                            <div className="flex items-center gap-2">
                               <img
                                 src={pull.user.avatar_url}
                                 alt=""
@@ -4454,7 +4776,7 @@ export default function App() {
                             setIsSidebarOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left p-5 lg:p-6 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
+                            "w-full text-left p-4 lg:p-4 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
                             selectedBranch?.name === branch.name
                               ? "bg-white/[0.03] border-white/6"
                               : "",
@@ -4467,7 +4789,7 @@ export default function App() {
                             />
                           )}
 
-                          <div className="space-y-2.5">
+                          <div className="space-y-2">
                             <div className="flex items-center justify-between text-[10px] font-mono text-white/35">
                               <span className="flex items-center gap-2">
                                 <GitBranch className="w-3 h-3" />
@@ -4481,7 +4803,7 @@ export default function App() {
 
                             <h3
                               className={cn(
-                                "font-serif italic text-base lg:text-lg leading-tight transition-colors break-words",
+                                "font-serif italic text-base leading-tight transition-colors break-words",
                                 selectedBranch?.name === branch.name
                                   ? "text-white"
                                   : "text-white/60 group-hover:text-white",
@@ -4490,7 +4812,7 @@ export default function App() {
                               {branch.name}
                             </h3>
 
-                            <div className="flex items-center gap-3 pt-0.5">
+                            <div className="flex items-center gap-3">
                               <span className="text-[9px] lg:text-[10px] text-white/35 font-mono truncate">
                                 {branch.commit.sha.substring(0, 7)}
                               </span>
@@ -4506,7 +4828,7 @@ export default function App() {
                             setIsSidebarOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left p-4 lg:p-5 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
+                            "w-full text-left p-3.5 lg:p-4 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
                             selectedRepoFile?.path === file.path
                               ? "bg-white/[0.03] border-white/6"
                               : "",
@@ -4519,7 +4841,7 @@ export default function App() {
                             />
                           )}
 
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                             <div className="flex items-center gap-2 text-[9px] font-mono text-white/35">
                               <FileCode className="h-3 w-3 shrink-0 text-white/20" />
                               <span className="truncate">{file.path}</span>
@@ -4626,25 +4948,25 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="p-6 sm:p-6 lg:p-12 pt-12 sm:pt-6 lg:pt-12 space-y-8 lg:space-y-12"
+                className="p-4 sm:p-5 lg:p-8 pt-8 sm:pt-5 lg:pt-8 space-y-6 lg:space-y-8"
               >
                 {/* PR/Branch Meta Header */}
-                <div className="flex flex-col xl:flex-row justify-between items-start gap-8 lg:gap-12 pb-8 lg:pb-12 border-b border-white/5">
-                  <div className="space-y-4 lg:space-y-6 flex-1">
+                <div className="flex flex-col xl:flex-row justify-between items-start gap-5 lg:gap-8 pb-5 lg:pb-8 border-b border-white/5">
+                  <div className="space-y-3 lg:space-y-4 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 bg-brand-orange" />
                       <span className="text-[9px] uppercase tracking-[0.4em] font-medium opacity-30">
                         {selectedPull ? "Pull Request" : selectedBranch ? "Branch View" : "Repository Code"}
                       </span>
                     </div>
-                    <h2 className="text-3xl sm:text-4xl lg:text-7xl font-serif italic tracking-tighter leading-[0.95] lg:leading-[0.85] break-words">
+                    <h2 className="text-3xl sm:text-4xl lg:text-6xl font-serif italic tracking-tighter leading-[0.95] lg:leading-[0.88] break-words">
                       {selectedPull
                         ? selectedPull.title
                         : selectedBranch
                           ? selectedBranch.name
                           : `${currentOwner}/${currentRepo}`}
                     </h2>
-                      <div className="flex flex-wrap gap-8 items-center pt-2">
+                      <div className="flex flex-wrap gap-5 lg:gap-6 items-center pt-1">
                         {selectedPull && (
                           <div className="flex items-center gap-4">
                             <span className="text-xs font-mono text-brand-orange/80">
@@ -4747,19 +5069,19 @@ export default function App() {
                     }
                     target="_blank"
                     rel="noreferrer"
-                    className="flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.4em] text-white/20 hover:text-white/40 transition-all"
+                    className="group flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.4em] text-white/20 hover:text-white/40 transition-all"
                   >
-                    Open Source <ExternalLink className="w-2.5 h-2.5 opacity-40" />
+                    Open Source <ExternalLink className="w-2.5 h-2.5 opacity-40 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:scale-[1.04]" />
                   </a>
                 </div>
 
                 {/* Tabs */}
-                <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-12 px-4 sm:px-6 lg:px-12 bg-onyx/95 backdrop-blur-md border-b border-white/5">
+                <div className="sticky top-0 z-30 -mx-4 sm:-mx-5 lg:-mx-8 px-4 sm:px-5 lg:px-8 bg-onyx/95 backdrop-blur-md border-b border-white/5">
                   <div className="flex">
                     <button
                       onClick={() => setActiveTab("diff")}
                       className={cn(
-                        "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group text-center whitespace-nowrap",
+                        "min-w-0 flex-1 px-3 sm:px-6 py-3 sm:py-3.5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.32em] font-medium transition-all relative overflow-hidden group text-center whitespace-nowrap",
                         activeTab === "diff"
                           ? "text-brand-orange"
                           : "text-white/20 hover:text-white/40",
@@ -4777,7 +5099,7 @@ export default function App() {
                       <button
                         onClick={() => setActiveTab("discussion")}
                         className={cn(
-                          "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
+                          "min-w-0 flex-1 px-3 sm:px-6 py-3 sm:py-3.5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.32em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
                           activeTab === "discussion"
                             ? "text-brand-orange"
                             : "text-white/20 hover:text-white/40",
@@ -4801,7 +5123,7 @@ export default function App() {
                       <button
                         onClick={() => setActiveTab("checks")}
                         className={cn(
-                          "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
+                          "min-w-0 flex-1 px-3 sm:px-6 py-3 sm:py-3.5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.32em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
                           activeTab === "checks"
                             ? "text-brand-orange"
                             : "text-white/20 hover:text-white/40",
@@ -4823,7 +5145,7 @@ export default function App() {
                       <button
                         onClick={() => setActiveTab("timeline")}
                         className={cn(
-                          "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
+                          "min-w-0 flex-1 px-3 sm:px-6 py-3 sm:py-3.5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.32em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
                           activeTab === "timeline"
                             ? "text-brand-orange"
                             : "text-white/20 hover:text-white/40",
@@ -4842,11 +5164,11 @@ export default function App() {
                   </div>
 
                 {/* Tab Content */}
-                <div className="space-y-12 min-h-[600px]">
+                <div className="space-y-8 min-h-[560px]">
                   {viewMode === "code" ? (
-                    <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                      <div className="space-y-6">
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                    <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-3">
                           <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
                             Repository Files
                           </h3>
@@ -4860,14 +5182,14 @@ export default function App() {
                               key={file.path}
                               onClick={() => loadRepoFile(file)}
                               className={cn(
-                                "relative border-b border-white/5 p-4 text-left transition-all group",
+                                  "relative overflow-hidden border-b border-white/5 p-3 text-left transition-all group",
                                 selectedRepoFile?.path === file.path
                                   ? "bg-brand-orange/5"
                                   : "hover:bg-white/[0.02]",
                               )}
                             >
                               {selectedRepoFile?.path === file.path && (
-                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange" />
+                                <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-brand-orange" />
                               )}
                               <div className="space-y-1.5">
                                 <p
@@ -4891,28 +5213,44 @@ export default function App() {
 
                       <div
                         className={cn(
-                          "min-w-0 space-y-8 transition-all duration-500",
+                          "min-w-0 space-y-5 transition-all duration-500",
                           isFullscreen &&
-                            "fixed inset-0 z-[100] bg-onyx p-8 sm:p-12 lg:p-16 overflow-y-auto custom-scrollbar",
+                            "fixed inset-0 z-[100] bg-onyx p-5 sm:p-8 lg:p-10 overflow-y-auto custom-scrollbar",
                         )}
                       >
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-3">
                           <div className="flex items-center gap-2 text-white/20">
                             <Code className="w-3 h-3" />
                             <h3 className="text-[9px] font-bold uppercase tracking-[0.4em]">
                               Repository Buffer
                             </h3>
                           </div>
-                          <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-4">
                             <div className="text-[9px] font-mono uppercase tracking-widest text-white/20 hidden sm:block">
-                              {selectedRepoFile?.path || "No file selected"}
+                              {activeRepoFilePath || "No file selected"}
                             </div>
-                            {authUser && selectedRepoFile && repoFileContent != null && (
+                            {authUser && (
+                              <button
+                                onClick={startCreateRepoFile}
+                                className="text-[9px] uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity"
+                              >
+                                New File
+                              </button>
+                            )}
+                            {authUser && (selectedRepoFile || isCreatingRepoFile) && repoFileContent != null && (
                               <button
                                 onClick={() => {
                                   setWriteError(null);
                                   if (isEditingRepoFile) {
-                                    setRepoFileDraft(repoFileContent);
+                                    if (isCreatingRepoFile) {
+                                      setIsCreatingRepoFile(false);
+                                      setRepoNewFilePath("");
+                                      setSelectedRepoFile(null);
+                                      setRepoFileContent(null);
+                                      setRepoFileDraft("");
+                                    } else {
+                                      setRepoFileDraft(repoFileContent);
+                                    }
                                   }
                                   setIsEditingRepoFile((current) => !current);
                                 }}
@@ -4938,9 +5276,9 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className={cn("relative overflow-hidden rounded-2xl border border-white/5 bg-panel", isFullscreen && "max-w-7xl mx-auto")}>
+                        <div className={cn("relative overflow-hidden rounded-xl border border-white/5 bg-panel", isFullscreen && "max-w-7xl mx-auto")}>
                           {loadingRepoTree || loadingRepoFile ? (
-                            <div className="flex flex-col items-center justify-center space-y-6 p-20 text-center lg:p-32">
+                            <div className="flex flex-col items-center justify-center space-y-4 p-14 text-center lg:p-20">
                               <div className="h-1.5 w-1.5 animate-pulse bg-brand-orange" />
                               <p className="text-[9px] font-medium uppercase tracking-[0.5em] text-brand-orange/40">
                                 Reading Repository...
@@ -4960,11 +5298,11 @@ export default function App() {
                                   value={repoFileDraft}
                                   onChange={(event) => setRepoFileDraft(event.target.value)}
                                   spellCheck={false}
-                                  className="min-h-[520px] w-full resize-none bg-onyx/40 p-4 font-mono text-[10px] leading-relaxed text-white/70 outline-none sm:p-6 sm:text-xs lg:p-8"
+                                  className="min-h-[520px] w-full resize-none bg-onyx/40 p-4 font-mono text-[10px] leading-relaxed text-white/70 outline-none sm:p-5 sm:text-xs lg:p-6"
                                 />
                               ) : (
                                 <pre
-                                  className="code-view-highlight w-fit min-w-full whitespace-pre p-4 text-[10px] leading-relaxed text-white/60 !m-0 !bg-onyx/40 sm:p-6 sm:text-xs lg:p-8"
+                                  className="code-view-highlight w-fit min-w-full whitespace-pre p-4 text-[10px] leading-relaxed text-white/60 !m-0 !bg-onyx/40 sm:p-5 sm:text-xs lg:p-6"
                                   dangerouslySetInnerHTML={{
                                     __html:
                                       highlightedRepoFileContent ??
@@ -4981,6 +5319,22 @@ export default function App() {
                         </div>
                         {isEditingRepoFile && (
                           <div className="space-y-3 rounded-xl border border-white/5 bg-white/[0.012] p-4">
+                            {isCreatingRepoFile && (
+                              <input
+                                value={repoNewFilePath}
+                                onChange={(event) => {
+                                  const path = event.target.value;
+                                  setRepoNewFilePath(path);
+                                  setRepoCommitMessage((current) =>
+                                    current === "Create file" || current.startsWith("Create ")
+                                      ? `Create ${path.trim() || "file"}`
+                                      : current,
+                                  );
+                                }}
+                                placeholder="path/to/new-file.md"
+                                className="w-full rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                              />
+                            )}
                             <div className="flex flex-col gap-3 sm:flex-row">
                               <input
                                 value={repoCommitMessage}
@@ -4990,7 +5344,7 @@ export default function App() {
                               />
                               <button
                                 onClick={commitRepoFile}
-                                disabled={committingRepoFile || !repoCommitMessage.trim() || repoFileDraft === repoFileContent}
+                                disabled={committingRepoFile || !canCommitRepoFile}
                                 className="rounded-lg border border-brand-orange/25 bg-brand-orange/10 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange transition-colors hover:bg-brand-orange/15 disabled:cursor-not-allowed disabled:opacity-35"
                               >
                                 {committingRepoFile ? "Committing" : `Commit to ${activeRepoRef}`}
@@ -5054,8 +5408,8 @@ export default function App() {
                       </div>
                     </div>
                   ) : activeTab === "timeline" ? (
-                    <div className="w-full min-w-0 max-w-3xl mx-auto overflow-hidden space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                      <div className="relative space-y-12 lg:space-y-16 py-4">
+                    <div className="w-full min-w-0 max-w-3xl mx-auto overflow-hidden space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="relative space-y-8 lg:space-y-10 py-2">
                         {getTimeline().length > 0 ? (
                           <>
                             {/* The Vertical Line */}
@@ -5067,7 +5421,7 @@ export default function App() {
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: idx * 0.05 }}
-                                className="relative min-w-0 pl-12 sm:pl-20 group"
+                                className="relative min-w-0 pl-11 sm:pl-16 group"
                               >
                                 {(() => {
                                   const meta = getTimelineMeta(event);
@@ -5081,7 +5435,7 @@ export default function App() {
                                         {meta.icon}
                                       </div>
 
-                                      <div className="space-y-4">
+                                      <div className="space-y-3">
                                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-mono opacity-30 uppercase tracking-widest">
                                           <span>{new Date(event.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                                           <span>{new Date(event.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -5090,7 +5444,7 @@ export default function App() {
                                           </span>
                                         </div>
 
-                                        <div className="space-y-4 pt-1">
+                                        <div className="space-y-3 pt-0.5">
                                           {renderTimelineEventBody(event)}
                                         </div>
                                       </div>
@@ -5110,10 +5464,10 @@ export default function App() {
                       </div>
                     </div>
                   ) : activeTab === "diff" ? (
-                    <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    <div className="grid grid-cols-1 xl:grid-cols-[280px_1fr] gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       {/* File List */}
-                      <div className="space-y-6">
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-3">
                           <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
                             Files
                           </h3>
@@ -5128,14 +5482,14 @@ export default function App() {
                                 key={file.filename}
                                 onClick={() => setSelectedFile(file)}
                                 className={cn(
-                                  "text-left p-4 border-b border-white/5 transition-all group relative",
+                                  "text-left p-4 border-b border-white/5 transition-all group relative overflow-hidden",
                                   selectedFile?.filename === file.filename
                                     ? "bg-brand-orange/5"
                                     : "hover:bg-white/[0.02]",
                                 )}
                               >
                                 {selectedFile?.filename === file.filename && (
-                                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange" />
+                                  <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-brand-orange" />
                                 )}
                                 <div className="space-y-2">
                                   <p
@@ -5157,7 +5511,7 @@ export default function App() {
                                     </span>
                                     <span
                                       className={cn(
-                                        "px-1.5 py-0.5 border text-[7px]",
+                                        "rounded-md px-1.5 py-0.5 border text-[7px]",
                                         file.status === "modified"
                                           ? "border-amber-500/20 text-amber-500/60"
                                           : file.status === "added"
@@ -5182,19 +5536,19 @@ export default function App() {
                       {/* Diff Editor */}
                       <div
                         className={cn(
-                          "space-y-8 min-w-0 transition-all duration-500",
+                          "space-y-5 min-w-0 transition-all duration-500",
                           isFullscreen &&
-                            "fixed inset-0 z-[100] bg-onyx p-8 sm:p-12 lg:p-16 overflow-y-auto custom-scrollbar",
+                            "fixed inset-0 z-[100] bg-onyx p-5 sm:p-8 lg:p-10 overflow-y-auto custom-scrollbar",
                         )}
                       >
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-3">
                           <div className="flex items-center gap-2 text-white/20">
                             <Code className="w-3 h-3" />
                             <h3 className="text-[9px] font-bold uppercase tracking-[0.4em]">
                               Source Buffer
                             </h3>
                           </div>
-                          <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-4">
                             <div className="text-[9px] font-mono opacity-20 uppercase tracking-widest leading-none hidden sm:block">
                               {selectedFile?.filename || "No file selected"}
                             </div>
@@ -5216,9 +5570,9 @@ export default function App() {
                         </div>
 
                         <div className={cn("relative", isFullscreen && "max-w-7xl mx-auto")}>
-                          <div className="relative bg-panel border border-white/5 overflow-hidden rounded-2xl">
+                          <div className="relative bg-panel border border-white/5 overflow-hidden rounded-xl">
                             {loadingFiles ? (
-                              <div className="p-20 lg:p-32 flex flex-col items-center justify-center space-y-6 text-center">
+                              <div className="p-14 lg:p-20 flex flex-col items-center justify-center space-y-4 text-center">
                                 <div className="w-1.5 h-1.5 bg-brand-orange animate-pulse" />
                                 <p className="text-[9px] uppercase tracking-[0.5em] text-brand-orange/40 font-medium">
                                   Decoding Diff Stream...
@@ -5250,22 +5604,22 @@ export default function App() {
                                         key={`${index}-${row.content}`}
                                         id={rowId}
                                         className={cn(
-                                          "relative grid min-w-full grid-cols-[3.5rem_3.5rem_1fr] transition-colors duration-500",
+                                          "relative grid min-w-full grid-cols-[3.5rem_3.5rem_1fr] overflow-hidden transition-colors duration-500",
                                           row.kind === "added" &&
-                                            "bg-emerald-500/[0.08] text-emerald-300/80",
+                                            "rounded-sm bg-emerald-500/[0.08] text-emerald-300/80",
                                           row.kind === "deleted" &&
-                                            "bg-rose-500/[0.08] text-rose-300/80",
+                                            "rounded-sm bg-rose-500/[0.08] text-rose-300/80",
                                           row.kind === "hunk" &&
-                                            "bg-brand-orange/[0.1] text-brand-orange/50",
+                                            "rounded-sm bg-brand-orange/[0.1] text-brand-orange/50",
                                           row.kind === "meta" &&
                                             "text-white/20",
                                           row.kind === "context" && "text-white/60",
                                           isHighlightedRange &&
-                                            "bg-brand-orange/[0.14] text-white ring-1 ring-inset ring-brand-orange/35 shadow-[inset_3px_0_0_rgba(255,107,43,0.85)]",
+                                            "rounded-sm bg-brand-orange/[0.14] text-white ring-1 ring-inset ring-brand-orange/35 shadow-[inset_3px_0_0_rgba(255,107,43,0.85)]",
                                         )}
                                       >
                                         {isHighlightedRange && (
-                                          <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-brand-orange" />
+                                          <div className="pointer-events-none absolute inset-y-1 left-0 w-1 rounded-r-full bg-brand-orange" />
                                         )}
                                         <div className="px-3 py-0.5 text-right text-white/10 select-none border-r border-white/5">
                                           {row.oldLine ?? ""}
@@ -5282,7 +5636,7 @@ export default function App() {
                                     ))}
                                   </div>
                                 ) : (
-                                  <pre className="w-fit min-w-full p-4 sm:p-6 lg:p-8 text-[10px] sm:text-xs lg:text-sm font-mono leading-relaxed !bg-onyx/40 !m-0 overflow-x-visible text-white/60">
+                                  <pre className="w-fit min-w-full p-4 sm:p-5 lg:p-6 text-[10px] sm:text-xs lg:text-sm font-mono leading-relaxed !bg-onyx/40 !m-0 overflow-x-visible text-white/60">
                                     {selectedFile
                                       ? "Binary file or no changes shown."
                                       : files.length > 0
@@ -5297,8 +5651,8 @@ export default function App() {
                       </div>
                     </div>
                   ) : activeTab === "checks" ? (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                      <section className="space-y-8">
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <section className="space-y-6">
                         <div className="flex items-center justify-between">
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                             <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
@@ -5323,17 +5677,59 @@ export default function App() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-4">
+                          <div className="flex flex-wrap items-center justify-end gap-3">
                             {checkSummary?.merge_state_status === "dirty" && (
-                              <a
-                                href={selectedPull?.html_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.24em] text-white/18 transition-colors hover:text-amber-200/70"
+                              <>
+                                {canResolvePullConflictsInCode && (
+                                  <button
+                                    onClick={resolvePullConflictsInCode}
+                                    className="rounded-lg border border-amber-200/15 bg-amber-200/[0.03] px-3 py-2 text-[9px] font-medium uppercase tracking-[0.18em] text-amber-200/50 transition-colors hover:bg-amber-200/[0.06] hover:text-amber-200/75"
+                                  >
+                                    Resolve in Code
+                                  </button>
+                                )}
+                                <a
+                                  href={selectedPull?.html_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.24em] text-white/18 transition-colors hover:text-amber-200/70"
+                                >
+                                  GitHub
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              </>
+                            )}
+                            {authUser && selectedPull?.state === "open" && (
+                              <>
+                                <button
+                                  onClick={runPullUpdateBranch}
+                                  disabled={pullActionInFlight != null}
+                                  className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[9px] font-medium uppercase tracking-[0.18em] text-white/30 transition-colors hover:bg-white/[0.04] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-30"
+                                >
+                                  {pullActionInFlight === "update" ? "Updating" : "Update Branch"}
+                                </button>
+                                {(["merge", "squash", "rebase"] as const).map((method) => (
+                                  <button
+                                    key={method}
+                                    onClick={() => runPullMerge(method)}
+                                    disabled={pullActionInFlight != null || checkSummary?.merge_state_status === "dirty"}
+                                    className="rounded-lg border border-brand-orange/20 bg-brand-orange/5 px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] text-brand-orange/75 transition-colors hover:bg-brand-orange/10 disabled:cursor-not-allowed disabled:opacity-30"
+                                  >
+                                    {pullActionInFlight === method
+                                      ? method === "merge" ? "Merging" : method === "squash" ? "Squashing" : "Rebasing"
+                                      : method}
+                                  </button>
+                                ))}
+                              </>
+                            )}
+                            {authUser && canDeletePullHeadBranch && (
+                              <button
+                                onClick={deletePullHeadBranch}
+                                disabled={deletingHeadBranch}
+                                className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[9px] font-medium uppercase tracking-[0.18em] text-white/30 transition-colors hover:bg-white/[0.04] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-30"
                               >
-                                Resolve on GitHub
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
+                                {deletingHeadBranch ? "Deleting" : "Delete Branch"}
+                              </button>
                             )}
                           </div>
                         </div>
@@ -5342,9 +5738,9 @@ export default function App() {
                             <button
                               key={run.id}
                               onClick={() => setSelectedRunId(run.id)}
-                              className="flex items-center justify-between py-6 border-l border-white/5 pl-8 hover:border-brand-orange/30 transition-all group text-left w-full hover:bg-white/[0.01]"
+                              className="flex items-center justify-between py-4 border-l border-white/5 pl-5 hover:border-brand-orange/30 transition-all group text-left w-full hover:bg-white/[0.01]"
                             >
-                              <div className="flex items-center gap-6 min-w-0">
+                              <div className="flex items-center gap-4 min-w-0">
                                 <div
                                   className={cn(
                                     "w-1 h-1 rounded-full",
@@ -5368,7 +5764,7 @@ export default function App() {
                       </section>
                     </div>
                   ) : (
-                    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       {selectedPull && checkRuns.length > 0 && (
                         <section className="border-b border-white/5 pb-4">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -5401,7 +5797,7 @@ export default function App() {
                       )}
 
                       {/* PR Description */}
-                      <section className="space-y-6">
+                      <section className="space-y-4">
                         {selectedPull && authUser && (
                           <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-4">
                             <div className="flex flex-wrap gap-2">
@@ -5466,7 +5862,7 @@ export default function App() {
                             </div>
                           </div>
                         ) : (
-                          <div className="markdown-body prose prose-invert prose-orange max-w-none min-w-0 overflow-hidden border-l border-white/5 pl-4 sm:pl-8 py-2">
+                          <div className="markdown-body prose prose-invert prose-orange max-w-none min-w-0 overflow-hidden border-l border-white/5 pl-4 sm:pl-6 py-1">
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
                               rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -5479,8 +5875,8 @@ export default function App() {
                       </section>
 
                       {selectedPull && authUser && (
-                        <section className="space-y-8 border-b border-white/5 pb-8">
-                          <div className="space-y-4 border-b border-white/5 pb-8">
+                        <section className="space-y-6 border-b border-white/5 pb-6">
+                          <div className="space-y-4 border-b border-white/5 pb-6">
                             <div className="flex items-center justify-between gap-4">
                               <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
                                 Review
@@ -5492,7 +5888,7 @@ export default function App() {
                               )}
                             </div>
 
-                            <div className="space-y-3 border-l border-white/5 pl-8">
+                            <div className="space-y-3 border-l border-white/5 pl-5 sm:pl-6">
                               <textarea
                                 value={newReviewBody}
                                 onChange={(event) => setNewReviewBody(event.target.value)}
@@ -5536,7 +5932,7 @@ export default function App() {
                               Reply
                             </h3>
                           </div>
-                          <div className="space-y-3 border-l border-white/5 pl-8">
+                          <div className="space-y-3 border-l border-white/5 pl-5 sm:pl-6">
                             <textarea
                               value={newCommentBody}
                               onChange={(event) => setNewCommentBody(event.target.value)}
@@ -5559,7 +5955,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div className="space-y-4 border-t border-white/5 pt-8">
+                          <div className="space-y-4 border-t border-white/5 pt-6">
                             <div className="flex items-center justify-between gap-4">
                               <div>
                                 <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
@@ -5575,7 +5971,7 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <div className="space-y-3 border-l border-white/5 pl-8">
+                            <div className="space-y-3 border-l border-white/5 pl-5 sm:pl-6">
                               {selectedFile ? (
                                 <>
                                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -5650,17 +6046,17 @@ export default function App() {
 
                       {/* General Comments */}
                       {comments.length > 0 && (
-                        <section className="space-y-12">
+                        <section className="space-y-8">
                           <div className="flex items-center gap-4 border-b border-white/5 pb-4">
                             <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
                               Discussion
                             </h3>
                           </div>
-                          <div className="space-y-12">
+                          <div className="space-y-8">
                             {comments.map((comment) => (
                               <div
                                 key={comment.id}
-                                className="flex gap-5 sm:gap-8 group"
+                                className="flex gap-4 sm:gap-6 group"
                               >
                                 <img
                                   src={comment.user.avatar_url}
@@ -5694,13 +6090,13 @@ export default function App() {
 
                       {/* Review Comments */}
                       {reviewComments.length > 0 && (
-                        <section className="space-y-12">
+                        <section className="space-y-8">
                           <div className="flex items-center gap-4 border-b border-white/5 pb-4">
                             <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/30">
                               Annotations
                             </h3>
                           </div>
-                          <div className="space-y-12">
+                          <div className="space-y-8">
                             {reviewComments.map((comment) => {
                               const line = comment.line || comment.original_line;
                               const startLine = comment.start_line || comment.original_start_line;
@@ -5708,7 +6104,7 @@ export default function App() {
                               return (
                               <div
                                 key={comment.id}
-                                className="space-y-6 group"
+                                className="space-y-4 group"
                               >
                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:justify-between">
                                   <div className="flex min-w-0 flex-[1_1_100%] items-start gap-3 sm:flex-1 sm:items-center">
@@ -5738,7 +6134,7 @@ export default function App() {
                                     </button>
                                   )}
                                 </div>
-                                <div className="flex gap-5 sm:gap-8">
+                                <div className="flex gap-4 sm:gap-6">
                                   <img
                                     src={comment.user.avatar_url}
                                     alt=""
@@ -5753,7 +6149,7 @@ export default function App() {
                                         {new Date(comment.created_at).toLocaleDateString()}
                                       </span>
                                     </div>
-                                    <div className="markdown-body prose prose-invert prose-sm max-w-none min-w-0 overflow-hidden text-white/30 border-l border-white/5 pl-4 sm:pl-8 py-1">
+                                    <div className="markdown-body prose prose-invert prose-sm max-w-none min-w-0 overflow-hidden text-white/30 border-l border-white/5 pl-4 sm:pl-6 py-1">
                                       <ReactMarkdown
                                         remarkPlugins={[remarkGfm]}
                                         rehypePlugins={[rehypeRaw, rehypeSanitize]}
@@ -6220,7 +6616,7 @@ export default function App() {
       {/* Policy Acknowledgement Modal */}
       <AnimatePresence>
         {showPolicyAcknowledgement && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 lg:p-12">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-8">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -6233,14 +6629,14 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative flex max-h-[84vh] w-full max-w-[32rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel shadow-2xl"
+              className="relative flex max-h-[84vh] w-full max-w-[30rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel shadow-2xl"
             >
-              <div className="border-b border-white/[0.04] px-5 py-4 sm:px-6">
+              <div className="border-b border-white/[0.04] px-5 py-3.5 sm:px-5">
                 <div className="flex items-center gap-3">
                   <img
                     src={COCCINELLA_LOGO_URL}
                     alt=""
-                    className="h-7 w-7 rounded-md object-contain opacity-55"
+                    className="h-6 w-6 rounded-md object-contain opacity-55"
                   />
                   <div className="space-y-1">
                     <h2 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/38">
@@ -6253,16 +6649,16 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex-1 space-y-3 overflow-y-auto px-5 py-5 sm:px-6 custom-scrollbar">
+              <div className="flex-1 space-y-2.5 overflow-y-auto px-5 py-4 sm:px-5 custom-scrollbar">
                 <p className="text-[13px] leading-relaxed text-white/50">
                   DIFF uses GitHub sign-in to read PRs, sync preferences, and make chosen GitHub writes.
                 </p>
 
                 <p className="text-[11px] leading-relaxed text-white/30">
-                  Writes include comments, reviews, commits, branches, PRs, and labels.
+                  Writes include comments, reviews, files, branches, PR actions, and labels.
                 </p>
 
-                <div className="flex flex-wrap gap-4 pt-1 text-[9px] font-medium uppercase tracking-[0.16em]">
+                <div className="flex flex-wrap gap-4 pt-0.5 text-[9px] font-medium uppercase tracking-[0.16em]">
                   <a
                     href="https://github.com/bniladridas/diff/blob/main/docs/legal/privacy.md"
                     target="_blank"
@@ -6282,7 +6678,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 border-t border-white/[0.04] px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <div className="flex flex-col gap-2 border-t border-white/[0.04] px-5 py-3.5 sm:flex-row sm:justify-end sm:px-5">
                 <button
                   onClick={() => setShowPolicyAcknowledgement(false)}
                   className="rounded-lg px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/28 transition-colors hover:bg-white/[0.03] hover:text-white/58"
