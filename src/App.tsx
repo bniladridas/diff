@@ -13,6 +13,7 @@ import {
   useMemo,
   useRef,
   type AnchorHTMLAttributes,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { type Session, type User as SupabaseUser } from "@supabase/supabase-js";
@@ -429,6 +430,18 @@ const storeGitHubProviderToken = (userId: string, token: string) => {
 const readStoredPolicyAcknowledgement = () => {
   return localStorage.getItem(LOCAL_STORAGE_POLICY_ACKNOWLEDGED_KEY) === "true";
 };
+
+const preventMouseFocusOnClickControls = (event: ReactMouseEvent<HTMLElement>) => {
+  if (event.button !== 0) return;
+
+  const target = event.target as HTMLElement | null;
+  if (!target) return;
+  if (target.closest("input, textarea, select, [contenteditable='true']")) return;
+
+  if (target.closest("button, a")) {
+    event.preventDefault();
+  }
+};
 const clearAuthHashFromUrl = () => {
   if (!window.location.hash && !window.location.href.endsWith("#")) return;
   window.history.replaceState(
@@ -504,15 +517,15 @@ function Tooltip({
 }) {
   const tooltipClassName =
     side === "right"
-      ? "left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 scale-[0.98] group-hover/tooltip:translate-x-0 group-hover/tooltip:scale-100 group-focus-within/tooltip:translate-x-0 group-focus-within/tooltip:scale-100"
-      : "left-1/2 top-full mt-2 -translate-x-1/2 translate-y-1 scale-[0.98] group-hover/tooltip:translate-y-0 group-hover/tooltip:scale-100 group-focus-within/tooltip:translate-y-0 group-focus-within/tooltip:scale-100";
+      ? "left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 scale-[0.98] group-hover/tooltip:translate-x-0 group-hover/tooltip:scale-100"
+      : "left-1/2 top-full mt-2 -translate-x-1/2 translate-y-1 scale-[0.98] group-hover/tooltip:translate-y-0 group-hover/tooltip:scale-100";
 
   return (
     <span className={cn("group/tooltip relative inline-flex", wrapperClassName)}>
       {children}
       <span
         className={cn(
-          "pointer-events-none absolute z-[80] max-w-[min(16rem,calc(100vw-2rem))] whitespace-normal rounded-[18px] border border-white/12 bg-panel px-4 py-2 text-[11px] font-medium normal-case leading-relaxed tracking-[0.01em] text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.18)] opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100",
+          "pointer-events-none absolute z-[80] max-w-[min(16rem,calc(100vw-2rem))] whitespace-normal rounded-[18px] border border-white/12 bg-panel px-4 py-2 text-[11px] font-medium normal-case leading-relaxed tracking-[0.01em] text-white/85 shadow-[0_10px_24px_rgba(0,0,0,0.18)] opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/tooltip:opacity-100",
           tooltipClassName,
         )}
       >
@@ -3936,7 +3949,10 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-onyx text-off-white font-sans selection:bg-brand-orange selection:text-off-white">
+    <div
+      onMouseDownCapture={preventMouseFocusOnClickControls}
+      className="min-h-screen bg-onyx text-off-white font-sans selection:bg-brand-orange selection:text-off-white"
+    >
       {/* Structural Decorative Elements */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full bg-grid-white/[0.5]" />
@@ -3979,6 +3995,7 @@ export default function App() {
               <div className="flex items-center gap-1.5 lg:gap-2">
                 <Tooltip content={`Theme: ${theme}`}>
                 <button
+                  type="button"
                   data-e2e="theme-toggle"
                   onClick={() => {
                   const themes: ThemePreference[] = ["dark", "midnight", "grey", "graphite"];
@@ -3986,14 +4003,14 @@ export default function App() {
                   const nextIndex = (currentIndex + 1) % themes.length;
                   setTheme(themes[nextIndex]);
                 }}
-                  className="group flex h-9 items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.012] px-2 transition-all hover:border-white/[0.08] hover:bg-white/[0.025]"
+                  className="group flex h-9 cursor-pointer select-none items-center gap-2 rounded-lg border border-white/[0.04] bg-white/[0.012] px-2 transition-colors hover:border-white/[0.08] hover:bg-white/[0.025]"
               >
                 <Palette className="h-3.5 w-3.5 text-white/25 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:rotate-[-2deg] group-hover:scale-[1.04] group-hover:text-white/45" />
                 <div className="flex gap-1 px-0.5">
-                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "dark" ? "bg-brand-orange scale-110" : "bg-white/10")} />
-                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "midnight" ? "bg-brand-orange scale-110" : "bg-white/10")} />
-                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "grey" ? "bg-brand-orange scale-110" : "bg-white/10")} />
-                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-all duration-300", theme === "graphite" ? "bg-brand-orange scale-110" : "bg-white/10")} />
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-colors duration-200", theme === "dark" ? "bg-brand-orange" : "bg-white/10")} />
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-colors duration-200", theme === "midnight" ? "bg-brand-orange" : "bg-white/10")} />
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-colors duration-200", theme === "grey" ? "bg-brand-orange" : "bg-white/10")} />
+                  <div className={cn("w-1 h-1 lg:w-1.5 lg:h-1.5 rounded-full transition-colors duration-200", theme === "graphite" ? "bg-brand-orange" : "bg-white/10")} />
                 </div>
               </button>
                 </Tooltip>
@@ -4130,18 +4147,18 @@ export default function App() {
                                 type="button"
                                 onClick={clearRecentRepos}
                                 aria-label="Clear recent repositories"
-                                className="mb-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
+                                className="group mb-1 flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
                               >
                                 Clear repos
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-3.5 w-3.5 opacity-45 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04] group-hover:opacity-80" />
                               </button>
                             )}
                             <button
                               onClick={signOut}
-                              className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
+                              className="group flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
                             >
                               Sign Out
-                              <LogOut className="h-3.5 w-3.5" />
+                              <LogOut className="h-3.5 w-3.5 opacity-45 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:translate-x-px group-hover:scale-[1.04] group-hover:opacity-80" />
                             </button>
                           </div>
                         </motion.div>
@@ -4421,7 +4438,7 @@ export default function App() {
                       <button
                         onClick={beginGitHubSignIn}
                         disabled={!isSupabaseConfigured || authLoading}
-                        className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-black/15 px-2.5 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
+                        className="group flex w-full items-center justify-between rounded-xl border border-white/5 bg-black/15 px-2.5 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <div>
                           <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-white/50">
@@ -4431,7 +4448,7 @@ export default function App() {
                             Sync settings and discussion actions
                           </div>
                         </div>
-                        <Lock className="h-3.5 w-3.5 text-white/30" />
+                        <Lock className="h-3.5 w-3.5 text-white/30 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:rotate-[-2deg] group-hover:scale-[1.04] group-hover:text-white/50" />
                       </button>
                     ))}
                 </div>
