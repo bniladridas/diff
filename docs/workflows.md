@@ -25,7 +25,7 @@ This repository uses GitHub Actions for validation and release work.
   This workflow is intentionally read-only. It does not seed a Supabase user session and does not publish live GitHub comments or reviews. Without a seeded session, `check:e2e` runs anonymous browser coverage. Without auth tokens, `check:app` treats authenticated preference and write checks as optional pass-through checks; set `DIFF_REQUIRE_AUTH_CHECKS=1` in a secret-backed environment when those checks must be enforced.
 
 - `workflows/release.yml`
-  Builds and publishes a GitHub release when a `v*` tag is pushed. The release generator validates that the tag is a `v`-prefixed Semantic Versioning 2.0.0 value, such as `v0.3.3`, `v1.0.0`, or `v1.0.0-rc.1`.
+  Builds and publishes a GitHub release when a `v*` tag is pushed. The release generator validates that the tag is a `v`-prefixed Semantic Versioning 2.0.0 value, such as `v0.3.4`, `v1.0.0`, or `v1.0.0-rc.1`.
   - lockfile-based dependency install with `npm ci`
   - `npm run lint`
   - `npm run build`
@@ -43,7 +43,7 @@ This repository uses GitHub Actions for validation and release work.
 ## Notes
 
 - Release publishing requires `contents: write`.
-- Git tags use the common `v` prefix, but the semantic version is the value after `v`. For example, `v0.3.3` is the tag name and `0.3.3` is the SemVer value.
+- Git tags use the common `v` prefix, but the semantic version is the value after `v`. For example, `v0.3.4` is the tag name and `0.3.4` is the SemVer value.
 - While DIFF is in `0.y.z`, releases are still initial-development releases. PATCH versions are used for fixes and narrow refinements, MINOR versions are used for larger backward-compatible additions, and prerelease identifiers such as `-rc.1` may be used before a stable cut.
 - The app checks use `GITHUB_TOKEN` for GitHub API reads. If the default workflow token is not sufficient for the repo targets DIFF is reading, move that workflow to a dedicated secret-backed token.
 - Authenticated browser flows, live PR comments, inline review comments, and review submission are verified manually or through local seeded `check:e2e` runs, not in default CI.

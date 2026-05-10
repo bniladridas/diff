@@ -8,6 +8,18 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.3.4",
+    title: "Sign-In & Check Polish",
+    description: "Small cleanup around sign-in, release notes, and verification.",
+    category: "fix",
+    details: [
+      "First sign-in has a brief privacy and terms acknowledgement",
+      "OAuth redirects leave a cleaner URL after sign-in",
+      "Check logs resolve GitHub Actions jobs more consistently",
+      "Verification output is quieter by default"
+    ]
+  },
+  {
     version: "0.3.3",
     title: "Branch History & Mobile Annotations",
     description: "Tightened branch history and mobile review metadata.",

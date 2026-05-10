@@ -4,6 +4,7 @@ Last updated: 2026-05-10
 
 This repository now treats the release line as:
 
+- `v0.3.4` Sign-In & Check Polish
 - `v0.3.3` Branch History & Mobile Annotations
 - `v0.3.2` Mobile Review Navigation
 - `v0.3.1` State & Interface Refinements
@@ -17,11 +18,25 @@ This repository now treats the release line as:
 
 The in-app `Updates` feed in `src/constants/updates.ts` should stay aligned with these tags and GitHub releases.
 
+Keep update and release-note copy calm, compact, and non-pushy. Prefer maintenance-style wording such as "polish", "cleanup", "quieter", or "more consistent" when accurate; avoid marketing-heavy phrasing for routine fixes.
+
 The root `VERSION` file should stay aligned with `package.json` for each release.
 
-Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.3`; the semantic version is `0.3.3`.
+Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.4`; the semantic version is `0.3.4`.
 
-Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.3` points at the same commit as `v0.3.3`.
+Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.4` points at the same commit as `v0.3.4`.
+
+When bumping a release, update all version-bearing release files together:
+
+- `package.json`
+- `package-lock.json`
+- `VERSION`
+- `src/constants/updates.ts`
+- `.codex/README.md`
+- `scripts/generate-release-notes.ts` examples and error text
+- `docs/workflows.md` release examples
+
+After the edits, run `node --import tsx ./scripts/generate-release-notes.ts vX.Y.Z /tmp/diff-release-notes.md` and confirm the generated changelog compares the previous release tag to the new tag.
 
 Supabase auth expects `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the local environment.
 
