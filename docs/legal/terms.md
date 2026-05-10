@@ -4,7 +4,7 @@
 
 Last updated: 2026-05-10
 
-By using DIFF, you agree to use it responsibly and only with GitHub accounts and repositories you are authorized to access.
+DIFF is provided by Coccinella Labs Inc. By using DIFF, you agree to use it responsibly and only with GitHub accounts and repositories you are authorized to access.
 
 ## GitHub Access
 
@@ -23,6 +23,8 @@ Do not use DIFF to access data without permission, abuse GitHub APIs, publish un
 ## No Affiliation
 
 DIFF is not an official product of GitHub, Supabase, or any repository owner whose data it reads.
+
+Project and company context is available at https://github.com/Coccinella-Labs/coccinella.
 
 ## No Warranty
 

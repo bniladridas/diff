@@ -30,7 +30,12 @@ interface PullFileSummary {
 
 interface ChecksPayload {
   total_count?: number;
-  check_runs?: Array<{ id?: number; conclusion?: string | null; status?: string | null }>;
+  check_runs?: Array<{
+    id?: number;
+    conclusion?: string | null;
+    status?: string | null;
+    type?: "check_run" | "status";
+  }>;
   mergeable?: boolean | null;
   merge_state_status?: string | null;
 }
@@ -449,6 +454,7 @@ async function main() {
 
     if (checks?.check_runs?.length) {
       const checkRunIds = checks.check_runs
+        .filter((run) => run.type !== "status")
         .map((run) => run.id)
         .filter((id): id is number => typeof id === "number");
       const firstCheckRunId = checkRunIds[0];
@@ -558,6 +564,19 @@ async function main() {
             detail: "no actions job id exposed by sampled check runs",
           });
         }
+      } else {
+        record({
+          name: "check-run-detail",
+          status: "skip",
+          durationMs: 0,
+          detail: "no GitHub check runs returned; commit statuses covered by checks list",
+        });
+        record({
+          name: "check-run-logs",
+          status: "skip",
+          durationMs: 0,
+          detail: "no GitHub Actions check runs returned",
+        });
       }
     }
 

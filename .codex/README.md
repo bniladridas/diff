@@ -4,6 +4,7 @@ Last updated: 2026-05-10
 
 This repository now treats the release line as:
 
+- `v0.3.5` Sign-In Trust Update
 - `v0.3.4` Sign-In & Check Polish
 - `v0.3.3` Branch History & Mobile Annotations
 - `v0.3.2` Mobile Review Navigation
@@ -22,9 +23,9 @@ Keep update and release-note copy calm, compact, and non-pushy. Prefer maintenan
 
 The root `VERSION` file should stay aligned with `package.json` for each release.
 
-Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.4`; the semantic version is `0.3.4`.
+Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.5`; the semantic version is `0.3.5`.
 
-Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.4` points at the same commit as `v0.3.4`.
+Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.5` points at the same commit as `v0.3.5`.
 
 When bumping a release, update all version-bearing release files together:
 

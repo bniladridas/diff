@@ -4,7 +4,7 @@
 
 Last updated: 2026-05-10
 
-DIFF is a browser-based pull request review tool. This policy explains what information DIFF uses when you sign in with GitHub through Supabase.
+DIFF is a browser-based pull request review tool provided by Coccinella Labs Inc. This policy explains what information DIFF uses when you sign in with GitHub through Supabase.
 
 ## Information DIFF Uses
 
@@ -30,4 +30,7 @@ Browser-local data can be cleared from your browser storage. Synced preferences 
 
 ## Contact
 
-For project questions, use the repository issue tracker at https://github.com/bniladridas/diff.
+For project questions, use the repository issue tracker or Coccinella Labs project space:
+
+- https://github.com/bniladridas/diff
+- https://github.com/Coccinella-Labs/coccinella

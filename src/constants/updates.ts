@@ -8,6 +8,18 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.3.5",
+    title: "Sign-In Trust Update",
+    description: "Quieter sign-in notice and clearer product ownership.",
+    category: "fix",
+    details: [
+      "Sign-in notice identifies Coccinella Labs more clearly",
+      "Privacy and terms copy includes company context",
+      "Account actions and legal links use a calmer layout",
+      "Sign-in modal spacing and copy are less noisy"
+    ]
+  },
+  {
     version: "0.3.4",
     title: "Sign-In & Check Polish",
     description: "Small cleanup around sign-in, release notes, and verification.",

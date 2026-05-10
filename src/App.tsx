@@ -332,6 +332,8 @@ const LOCAL_STORAGE_DEFAULT_REPO_KEY = "diff_default_repo";
 const LOCAL_STORAGE_THEME_KEY = "diff_theme";
 const LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY = "diff_github_provider_token";
 const LOCAL_STORAGE_POLICY_ACKNOWLEDGED_KEY = "diff_policy_acknowledged";
+const COCCINELLA_LOGO_URL =
+  "https://raw.githubusercontent.com/Coccinella-Labs/Coccinella-Labs.github.io/main/999KB.png";
 const SYSTEM_DEFAULT_REPO = { owner: SYSTEM_OWNER, repo: SYSTEM_REPO };
 const readStoredDefaultRepo = () => {
   const saved = localStorage.getItem(LOCAL_STORAGE_DEFAULT_REPO_KEY);
@@ -1901,16 +1903,16 @@ export default function App() {
       } else {
         setAuthError(null);
       }
-	      const session = data.session;
-	      setAuthSession(session);
-	      setAuthUser(session?.user ?? null);
-	      const providerToken = session?.provider_token ?? readStoredGitHubProviderToken();
-	      setGitHubProviderToken(providerToken);
-	      if (session) {
-	        clearAuthHashFromUrl();
-	      }
-	      setAuthLoading(false);
-	    });
+      const session = data.session;
+      setAuthSession(session);
+      setAuthUser(session?.user ?? null);
+      const providerToken = session?.provider_token ?? readStoredGitHubProviderToken();
+      setGitHubProviderToken(providerToken);
+      if (session) {
+        clearAuthHashFromUrl();
+      }
+      setAuthLoading(false);
+    });
 
     const {
       data: { subscription },
@@ -1919,14 +1921,14 @@ export default function App() {
       setAuthSession(session);
       setAuthUser(session?.user ?? null);
       setAuthError(null);
-	      if (session?.provider_token) {
-	        localStorage.setItem(
-	          LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY,
-	          session.provider_token,
-	        );
-	        setGitHubProviderToken(session.provider_token);
-	        clearAuthHashFromUrl();
-	      } else if (event === "SIGNED_OUT") {
+      if (session?.provider_token) {
+        localStorage.setItem(
+          LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY,
+          session.provider_token,
+        );
+        setGitHubProviderToken(session.provider_token);
+        clearAuthHashFromUrl();
+      } else if (event === "SIGNED_OUT") {
         localStorage.removeItem(LOCAL_STORAGE_GITHUB_PROVIDER_TOKEN_KEY);
         setGitHubProviderToken(null);
       }
@@ -3037,7 +3039,7 @@ export default function App() {
                           </div>
 
                           <div className="pt-2.5">
-                            <div className="mb-1.5 grid grid-cols-2 gap-1.5">
+                            <div className="mb-2.5 grid grid-cols-2 gap-1.5">
                               <a
                                 href="https://github.com/bniladridas/diff/blob/main/docs/legal/privacy.md"
                                 target="_blank"
@@ -3055,12 +3057,13 @@ export default function App() {
                                 Terms
                               </a>
                             </div>
+                            <div className="mb-2 border-t border-white/5" />
                             {recentRepos.length > 0 && (
                               <button
                                 type="button"
                                 onClick={clearRecentRepos}
                                 aria-label="Clear recent repositories"
-                                className="mb-1.5 flex w-full items-center justify-between rounded-lg px-2 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-white/30 transition-colors hover:bg-white/[0.03] hover:text-white/60"
+                                className="mb-1.5 flex w-full items-center justify-between rounded-lg px-2 py-2 text-[10px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:bg-white/[0.03] hover:text-white/70"
                               >
                                 Clear repos
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -3085,13 +3088,13 @@ export default function App() {
                         ? "Sign in with GitHub via Supabase"
                         : "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable auth"
                     }
-	                  >
-	                    <span className="inline-flex">
-	                      <button
-	                        onClick={beginGitHubSignIn}
-	                        disabled={!isSupabaseConfigured || authLoading}
-	                        className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
-	                      >
+                  >
+                    <span className="inline-flex">
+                      <button
+                        onClick={beginGitHubSignIn}
+                        disabled={!isSupabaseConfigured || authLoading}
+                        className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5 text-[9px] font-medium uppercase tracking-[0.2em] text-white/40 transition-colors hover:border-white/10 hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
                         <Lock className={cn("h-3.5 w-3.5", authLoading && isSupabaseConfigured && "animate-pulse")} />
                         <span className="hidden sm:inline">
                           {authLoading ? "Auth" : "Sign In"}
@@ -3337,12 +3340,12 @@ export default function App() {
                           Sign out
                         </button>
                       </div>
-	                    ) : (
-	                      <button
-	                        onClick={beginGitHubSignIn}
-	                        disabled={!isSupabaseConfigured || authLoading}
-	                        className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-black/15 px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
-	                      >
+                    ) : (
+                      <button
+                        onClick={beginGitHubSignIn}
+                        disabled={!isSupabaseConfigured || authLoading}
+                        className="flex w-full items-center justify-between rounded-xl border border-white/5 bg-black/15 px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.02] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
                         <div>
                           <div className="text-[9px] font-medium uppercase tracking-[0.16em] text-white/50">
                             Sign in with GitHub
@@ -5039,7 +5042,7 @@ export default function App() {
         </section>
       </main>
 
-	      {/* Policy Acknowledgement Modal */}
+      {/* Policy Acknowledgement Modal */}
       <AnimatePresence>
         {showPolicyAcknowledgement && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 lg:p-12">
@@ -5055,35 +5058,41 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative flex max-h-[84vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel shadow-2xl"
+              className="relative flex max-h-[84vh] w-full max-w-[32rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel shadow-2xl"
             >
-              <div className="flex items-center justify-between border-b border-white/5 px-5 py-4 sm:px-6">
-                <h2 className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/35">
-                  Before Sign In
-                </h2>
-                <button
-                  onClick={() => setShowPolicyAcknowledgement(false)}
-                  className="text-[9px] font-medium uppercase tracking-[0.2em] text-white/15 transition-colors hover:text-white/45"
-                >
-                  Close
-                </button>
+              <div className="border-b border-white/[0.04] px-5 py-4 sm:px-6">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={COCCINELLA_LOGO_URL}
+                    alt=""
+                    className="h-7 w-7 rounded-md object-contain opacity-55"
+                  />
+                  <div className="space-y-1">
+                    <h2 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/38">
+                      Sign in with GitHub
+                    </h2>
+                    <div className="text-[11px] leading-none text-white/24">
+                      by Coccinella Labs Inc.
+                    </div>
+                  </div>
+                </div>
               </div>
 
-	              <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5 sm:px-6 custom-scrollbar">
-	                <p className="text-[13px] leading-relaxed text-white/52">
-	                  DIFF uses GitHub sign-in to read pull requests, sync preferences, and publish comments or reviews only when you choose.
-	                </p>
+              <div className="flex-1 space-y-3 overflow-y-auto px-5 py-5 sm:px-6 custom-scrollbar">
+                <p className="text-[13px] leading-relaxed text-white/50">
+                  DIFF by Coccinella Labs uses GitHub sign-in to read pull requests, sync preferences, and publish comments or reviews only when you choose.
+                </p>
 
-	                <p className="border-y border-white/5 py-3 text-[11px] leading-relaxed text-white/34">
-	                  Writes post as your GitHub account.
-	                </p>
+                <p className="text-[11px] leading-relaxed text-white/30">
+                  Posts are made from your GitHub account only after you choose them.
+                </p>
 
-                <div className="flex flex-wrap gap-3 text-[10px] font-medium uppercase tracking-[0.2em]">
+                <div className="flex flex-wrap gap-4 pt-1 text-[9px] font-medium uppercase tracking-[0.16em]">
                   <a
                     href="https://github.com/bniladridas/diff/blob/main/docs/legal/privacy.md"
                     target="_blank"
                     rel="noreferrer"
-                    className="text-white/30 underline decoration-white/10 underline-offset-4 transition-colors hover:text-white/65"
+                    className="text-white/28 transition-colors hover:text-white/60"
                   >
                     Privacy Policy
                   </a>
@@ -5091,23 +5100,23 @@ export default function App() {
                     href="https://github.com/bniladridas/diff/blob/main/docs/legal/terms.md"
                     target="_blank"
                     rel="noreferrer"
-                    className="text-white/30 underline decoration-white/10 underline-offset-4 transition-colors hover:text-white/65"
+                    className="text-white/28 transition-colors hover:text-white/60"
                   >
                     Terms of Use
                   </a>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 border-t border-white/5 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <div className="flex flex-col gap-2 border-t border-white/[0.04] px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
                 <button
                   onClick={() => setShowPolicyAcknowledgement(false)}
-                  className="rounded-lg border border-white/5 px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.2em] text-white/30 transition-colors hover:border-white/10 hover:text-white/60"
+                  className="rounded-lg px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/28 transition-colors hover:bg-white/[0.03] hover:text-white/58"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={acknowledgePolicyAndSignIn}
-                  className="rounded-lg border border-brand-orange/30 bg-brand-orange/10 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.2em] text-brand-orange transition-colors hover:bg-brand-orange/15"
+                  className="rounded-lg border border-brand-orange/25 bg-brand-orange/10 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange transition-colors hover:bg-brand-orange/15"
                 >
                   Continue with GitHub
                 </button>
