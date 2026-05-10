@@ -4,11 +4,17 @@ import path from "path";
 import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 import { writeFile } from "node:fs/promises";
+import { WebSocket, WebSocketServer } from "ws";
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
-  app.use(express.json());
+  app.use(express.json({ limit: "2mb" }));
+  const liveClients = new Map<WebSocket, {
+    owner: string;
+    repo: string;
+    pullNumber: number | null;
+  }>();
 
   // GitHub API integration
   const REPO_OWNER = process.env.GITHUB_REPO_OWNER || "harpertoken";
@@ -54,6 +60,8 @@ async function startServer() {
     }
     return headers;
   };
+
+  const getPublicGitHubHeaders = (accept: string) => ({ Accept: accept });
 
   const getRepoCtx = (req: any) => ({
     owner: (req.query.owner as string) || REPO_OWNER,
@@ -180,6 +188,23 @@ async function startServer() {
     };
   };
 
+  const getRepoReadHeaders = async (req: express.Request, accept: string) => {
+    const providerTokenHeader = req.headers["x-github-provider-token"];
+    const hasProviderToken = Array.isArray(providerTokenHeader)
+      ? Boolean(providerTokenHeader[0])
+      : Boolean(providerTokenHeader);
+
+    if (!readBearerToken(req) && !hasProviderToken) {
+      return getPublicGitHubHeaders(accept);
+    }
+
+    const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+    return {
+      Accept: accept,
+      Authorization: `token ${githubProviderToken}`,
+    };
+  };
+
   const handleError = (res: any, error: any, context: string) => {
     if (error instanceof HttpError) {
       res.status(error.status).json({ error: error.message });
@@ -216,6 +241,25 @@ async function startServer() {
     }
 
     return null;
+  };
+
+  const parseLiveSubscription = (message: string) => {
+    const payload = JSON.parse(message);
+    const owner = typeof payload.owner === "string" ? payload.owner.trim() : "";
+    const repo = typeof payload.repo === "string" ? payload.repo.trim() : "";
+    const rawPullNumber = Number(payload.pullNumber);
+
+    if (payload.type !== "subscribe" || !owner || !repo) {
+      return null;
+    }
+
+    return {
+      owner,
+      repo,
+      pullNumber: Number.isFinite(rawPullNumber) && rawPullNumber > 0
+        ? rawPullNumber
+        : null,
+    };
   };
 
   app.get("/api/pulls", async (req, res) => {
@@ -726,6 +770,116 @@ async function startServer() {
     }
   });
 
+  app.get("/api/repo/tree", async (req, res) => {
+    try {
+      const { owner, repo } = getRepoCtx(req);
+      const headers = await getRepoReadHeaders(req, "application/vnd.github.v3+json");
+      const ref = typeof req.query.ref === "string" && req.query.ref.trim()
+        ? req.query.ref.trim()
+        : REPO_OWNER === owner && REPO_NAME === repo
+          ? undefined
+          : null;
+
+      const repoInfo = ref === null
+        ? await axios.get(`https://api.github.com/repos/${owner}/${repo}`, {
+            headers,
+          })
+        : null;
+      const treeRef = ref ?? repoInfo?.data?.default_branch ?? "HEAD";
+      const response = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(treeRef)}?recursive=1`,
+        { headers },
+      );
+      res.json({
+        ref: treeRef,
+        truncated: response.data.truncated,
+        tree: response.data.tree || [],
+      });
+    } catch (error: any) {
+      handleError(res, error, "RepoTree");
+    }
+  });
+
+  app.get("/api/repo/content", async (req, res) => {
+    try {
+      const { owner, repo } = getRepoCtx(req);
+      const filePath = typeof req.query.path === "string" ? req.query.path : "";
+      const ref = typeof req.query.ref === "string" ? req.query.ref : undefined;
+
+      if (!filePath) {
+        res.status(400).json({ error: "File path is required." });
+        return;
+      }
+
+      const response = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath).replace(/%2F/g, "/")}`,
+        {
+          headers: await getRepoReadHeaders(req, "application/vnd.github.raw"),
+          params: ref ? { ref } : undefined,
+          responseType: "text",
+          transformResponse: [(data) => data],
+        },
+      );
+
+      res.header("Content-Type", "text/plain; charset=utf-8");
+      res.send(response.data);
+    } catch (error: any) {
+      handleError(res, error, "RepoContent");
+    }
+  });
+
+  app.put("/api/repo/content", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const filePath = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+      const content = typeof req.body?.content === "string" ? req.body.content : "";
+      const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+      const branch = typeof req.body?.branch === "string" ? req.body.branch.trim() : "";
+      const sha = typeof req.body?.sha === "string" ? req.body.sha.trim() : "";
+
+      if (!filePath) {
+        res.status(400).json({ error: "File path is required." });
+        return;
+      }
+
+      if (!message) {
+        res.status(400).json({ error: "Commit message is required." });
+        return;
+      }
+
+      if (!branch) {
+        res.status(400).json({ error: "Target branch is required." });
+        return;
+      }
+
+      if (!sha) {
+        res.status(400).json({ error: "Current file SHA is required." });
+        return;
+      }
+
+      const response = await axios.put(
+        `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath).replace(/%2F/g, "/")}`,
+        {
+          message,
+          content: Buffer.from(content, "utf8").toString("base64"),
+          branch,
+          sha,
+        },
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            Authorization: `token ${githubProviderToken}`,
+          },
+        },
+      );
+
+      res.json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "RepoContentWrite");
+    }
+  });
+
   app.get("/api/checks/:check_run_id", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
@@ -826,16 +980,61 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
   // Only listen if not running as a Vercel function
   if (process.env.VERCEL === undefined) {
-    app.listen(PORT, "0.0.0.0", () => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
+
+    const wss = new WebSocketServer({ server, path: "/api/live" });
+    const liveInterval = Number(process.env.DIFF_LIVE_INTERVAL_MS || 15000);
+
+    wss.on("connection", (socket) => {
+      socket.on("message", (rawMessage) => {
+        try {
+          const subscription = parseLiveSubscription(rawMessage.toString());
+          if (!subscription) return;
+
+          liveClients.set(socket, subscription);
+          socket.send(JSON.stringify({
+            type: "subscribed",
+            owner: subscription.owner,
+            repo: subscription.repo,
+            pullNumber: subscription.pullNumber,
+            intervalMs: liveInterval,
+          }));
+        } catch {
+          socket.send(JSON.stringify({ type: "error", message: "Invalid live subscription." }));
+        }
+      });
+
+      socket.on("close", () => {
+        liveClients.delete(socket);
+      });
+    });
+
+    setInterval(() => {
+      const now = new Date().toISOString();
+      for (const [socket, subscription] of liveClients) {
+        if (socket.readyState !== WebSocket.OPEN) {
+          liveClients.delete(socket);
+          continue;
+        }
+
+        socket.send(JSON.stringify({
+          type: "refresh",
+          owner: subscription.owner,
+          repo: subscription.repo,
+          pullNumber: subscription.pullNumber,
+          at: now,
+        }));
+      }
+    }, liveInterval).unref();
   }
 
   return app;

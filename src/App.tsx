@@ -31,17 +31,9 @@ import {
   CheckCircle2,
   XCircle,
   Circle,
-  Clock,
   CircleSlash,
-  ArrowLeft,
-  X,
-  ListChecks,
   Terminal,
   AlertCircle,
-  Info,
-  GitGraph,
-  Layers,
-  ArrowDown,
   FileText,
   FileArchive,
   FileImage,
@@ -51,12 +43,10 @@ import {
   User,
   CheckCircle,
   ArrowRight,
-  Sparkles,
   Box,
-  Gift,
-  Menu,
   Palette,
   Settings,
+  Search,
   Database,
   Globe,
   Lock,
@@ -64,7 +54,6 @@ import {
   Sheet,
   Shield,
   Binary,
-  Code2,
   Layout,
   LogOut,
   Bookmark,
@@ -258,6 +247,23 @@ interface RepoInfo {
   html_url: string;
 }
 
+interface RepoTreeItem {
+  path: string;
+  mode: string;
+  type: "blob" | "tree" | string;
+  sha: string;
+  size?: number;
+  url: string;
+}
+
+interface SearchResult {
+  scope: "diff" | "repo";
+  path: string;
+  detail: string;
+  file?: ChangedFile;
+  repoItem?: RepoTreeItem;
+}
+
 interface DiffRow {
   kind: "meta" | "hunk" | "context" | "added" | "deleted";
   content: string;
@@ -283,6 +289,7 @@ interface DiffE2EState {
   loadedFilesCount: number;
   loading: boolean;
   activeTab: "diff" | "discussion" | "checks" | "timeline";
+  viewMode: "pulls" | "branches" | "code";
   isSidebarOpen: boolean;
   showUpdates: boolean;
   authMenuOpen: boolean;
@@ -317,6 +324,12 @@ interface DiffE2EBridge {
     event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
     body?: string,
   ) => Promise<void>;
+  getCodeFile: (path: string) => Promise<{ path: string; content: string; sha: string }>;
+  commitCodeFile: (
+    path: string,
+    content: string,
+    message: string,
+  ) => Promise<{ path: string; sha?: string }>;
   writeSessionFile: () => Promise<{ ok: boolean; path: string }>;
 }
 
@@ -829,7 +842,7 @@ const getFileKindLabel = (path: string) => {
 };
 
 export default function App() {
-  const [viewMode, setViewMode] = useState<"pulls" | "branches">("pulls");
+  const [viewMode, setViewMode] = useState<"pulls" | "branches" | "code">("pulls");
   const [defaultRepo, setDefaultRepo] = useState(readStoredDefaultRepo);
   const [currentOwner, setCurrentOwner] = useState(defaultRepo.owner);
   const [currentRepo, setCurrentRepo] = useState(defaultRepo.repo);
@@ -838,6 +851,17 @@ export default function App() {
   const [repoInfo, setRepoInfo] = useState<RepoInfo | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
+  const [repoTree, setRepoTree] = useState<RepoTreeItem[]>([]);
+  const [repoTreeTruncated, setRepoTreeTruncated] = useState(false);
+  const [selectedRepoFile, setSelectedRepoFile] = useState<RepoTreeItem | null>(null);
+  const [repoFileContent, setRepoFileContent] = useState<string | null>(null);
+  const [repoFileDraft, setRepoFileDraft] = useState("");
+  const [isEditingRepoFile, setIsEditingRepoFile] = useState(false);
+  const [repoCommitMessage, setRepoCommitMessage] = useState("");
+  const [committingRepoFile, setCommittingRepoFile] = useState(false);
+  const [loadingRepoTree, setLoadingRepoTree] = useState(false);
+  const [loadingRepoFile, setLoadingRepoFile] = useState(false);
+  const [repoSearchQuery, setRepoSearchQuery] = useState("");
   const [pulls, setPulls] = useState<PullRequest[]>([]);
   const [selectedPull, setSelectedPull] = useState<PullRequest | null>(null);
   const [files, setFiles] = useState<ChangedFile[]>([]);
@@ -857,6 +881,7 @@ export default function App() {
   const [runLogs, setRunLogs] = useState<string | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [checkDetailTab, setCheckDetailTab] = useState<"steps" | "logs">("steps");
+  const [liveLastUpdate, setLiveLastUpdate] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"diff" | "discussion" | "checks" | "timeline">("diff");
   const [loading, setLoading] = useState(true);
   const [showUpdates, setShowUpdates] = useState(false);
@@ -927,6 +952,40 @@ export default function App() {
   const pendingSavedPullRef = useRef<SavedPullPreference | null>(null);
   const pendingSavedPullLoadRef = useRef<string | null>(null);
   const diffRows = parseDiffRows(selectedFile?.patch);
+  const repoFiles = repoTree.filter((item) => item.type === "blob");
+  const normalizedRepoSearchQuery = repoSearchQuery.trim().toLowerCase();
+  const repoSearchResults: SearchResult[] = normalizedRepoSearchQuery
+    ? [
+        ...files
+          .filter((file) => {
+            const haystack = `${file.filename}\n${file.patch ?? ""}`.toLowerCase();
+            return haystack.includes(normalizedRepoSearchQuery);
+          })
+          .slice(0, 12)
+          .map((file) => ({
+            scope: "diff" as const,
+            path: file.filename,
+            detail: file.patch?.toLowerCase().includes(normalizedRepoSearchQuery)
+              ? "Diff content match"
+              : "Changed file path",
+            file,
+          })),
+        ...repoFiles
+          .filter((item) => item.path.toLowerCase().includes(normalizedRepoSearchQuery))
+          .slice(0, 24)
+          .map((item) => ({
+            scope: "repo" as const,
+            path: item.path,
+            detail: item.size != null ? `${item.size.toLocaleString()} bytes` : "Repository file",
+            repoItem: item,
+          })),
+      ]
+    : [];
+  const visibleRepoFiles = normalizedRepoSearchQuery
+    ? repoSearchResults
+        .filter((result) => result.scope === "repo" && result.repoItem)
+        .map((result) => result.repoItem!)
+    : repoFiles.slice(0, 250);
   const releasedUpdates = APP_UPDATES.filter((update) => update.category !== "planned");
   const plannedUpdates = APP_UPDATES.filter((update) => update.category === "planned");
   const checkStats = checkRuns.reduce(
@@ -1162,6 +1221,17 @@ export default function App() {
 
     return {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${authSession.access_token}`,
+      "X-GitHub-Provider-Token": githubProviderToken,
+    };
+  };
+
+  const getReadHeaders = () => {
+    if (!authSession?.access_token || !githubProviderToken) {
+      return undefined;
+    }
+
+    return {
       Authorization: `Bearer ${authSession.access_token}`,
       "X-GitHub-Provider-Token": githubProviderToken,
     };
@@ -2237,6 +2307,14 @@ export default function App() {
     setRepoInfo(null);
     setBranches([]);
     setSelectedBranch(null);
+    setRepoTree([]);
+    setRepoTreeTruncated(false);
+    setSelectedRepoFile(null);
+    setRepoFileContent(null);
+    setRepoFileDraft("");
+    setIsEditingRepoFile(false);
+    setRepoCommitMessage("");
+    setRepoSearchQuery("");
     setPulls([]);
     setSelectedPull(null);
     setFiles([]);
@@ -2295,6 +2373,7 @@ export default function App() {
         loadedFilesCount: files.length,
         loading,
         activeTab,
+        viewMode,
         isSidebarOpen,
         showUpdates,
         authMenuOpen,
@@ -2415,6 +2494,65 @@ export default function App() {
           throw new Error(writeError || authError || "Review submission failed.");
         }
       },
+      getCodeFile: async (filePath) => {
+        const branch = repoInfo?.default_branch ?? "HEAD";
+        const treeResponse = await fetch(
+          `/api/repo/tree?owner=${currentOwner}&repo=${currentRepo}&ref=${encodeURIComponent(branch)}`,
+          { headers: getReadHeaders() },
+        );
+        if (!treeResponse.ok) {
+          const errorData = await treeResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to load repository tree.");
+        }
+        const treeData = await treeResponse.json();
+        const item = Array.isArray(treeData.tree)
+          ? treeData.tree.find((entry: RepoTreeItem) => entry.path === filePath && entry.type === "blob")
+          : null;
+        if (!item) {
+          throw new Error(`File ${filePath} is not available in the repository tree.`);
+        }
+        const contentResponse = await fetch(
+          `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}&path=${encodeURIComponent(filePath)}&ref=${encodeURIComponent(branch)}`,
+          { headers: getReadHeaders() },
+        );
+        if (!contentResponse.ok) {
+          const errorData = await contentResponse.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to load code file.");
+        }
+        return {
+          path: filePath,
+          content: await contentResponse.text(),
+          sha: item.sha,
+        };
+      },
+      commitCodeFile: async (filePath, content, message) => {
+        setWriteError(null);
+        setAuthError(null);
+        const branch = repoInfo?.default_branch ?? "HEAD";
+        const currentFile = await window.__DIFF_E2E__!.getCodeFile(filePath);
+        const response = await fetch(
+          `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}`,
+          {
+            method: "PUT",
+            headers: getWriteHeaders(),
+            body: JSON.stringify({
+              path: filePath,
+              content,
+              message,
+              branch,
+              sha: currentFile.sha,
+            }),
+          },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Server responded with ${response.status}`);
+        }
+        return {
+          path: filePath,
+          sha: typeof data.content?.sha === "string" ? data.content.sha : undefined,
+        };
+      },
       writeSessionFile: async () => {
         const { data: sessionData, error: sessionError } = supabase
           ? await supabase.auth.getSession()
@@ -2511,8 +2649,10 @@ export default function App() {
     setPage(1);
     if (viewMode === "pulls") {
       fetchPulls(1, true);
-    } else {
+    } else if (viewMode === "branches") {
       fetchBranches(1, true);
+    } else {
+      fetchRepoTree();
     }
   }, [viewMode, stateFilter, currentOwner, currentRepo]);
 
@@ -2578,6 +2718,171 @@ export default function App() {
         setLoading(false);
         setLoadingMore(false);
       }
+    }
+  };
+
+  const fetchRepoTree = async () => {
+    const requestKey = `${currentOwner}/${currentRepo}`;
+    setLoading(true);
+    setLoadingRepoTree(true);
+    setError(null);
+    setSelectedPull(null);
+    setSelectedBranch(null);
+    setFiles([]);
+    setSelectedFile(null);
+    setComments([]);
+    setReviewComments([]);
+    setCommits([]);
+    setReviews([]);
+    setTimelineEvents([]);
+    setContentEdits([]);
+    setCheckRuns([]);
+    setCheckSummary(null);
+    setActiveTab("diff");
+
+    try {
+      const comparisonRepoInfo = repoInfo ?? (await fetchRepoInfo());
+      const ref = comparisonRepoInfo?.default_branch ?? "HEAD";
+      const response = await fetch(
+        `/api/repo/tree?owner=${currentOwner}&repo=${currentRepo}&ref=${encodeURIComponent(ref)}`,
+        { headers: getReadHeaders() },
+      );
+      if (repoKeyRef.current !== requestKey) return;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to fetch repository tree");
+      }
+
+      const data = await response.json();
+      if (repoKeyRef.current !== requestKey) return;
+      const nextTree = Array.isArray(data.tree)
+        ? data.tree
+            .filter((item: RepoTreeItem) => item.path && item.type)
+            .sort((a: RepoTreeItem, b: RepoTreeItem) => a.path.localeCompare(b.path))
+        : [];
+      setRepoTree(nextTree);
+      setRepoTreeTruncated(Boolean(data.truncated));
+      setHasMore(false);
+
+      const firstFile = nextTree.find((item: RepoTreeItem) => item.type === "blob") ?? null;
+      setSelectedRepoFile(firstFile);
+      if (firstFile) {
+        await loadRepoFile(firstFile, ref, requestKey);
+      } else {
+        setRepoFileContent(null);
+      }
+    } catch (err) {
+      if (repoKeyRef.current !== requestKey) return;
+      setError(err instanceof Error ? err.message : "Failed to fetch repository tree");
+    } finally {
+      if (repoKeyRef.current === requestKey) {
+        setLoading(false);
+        setLoadingRepoTree(false);
+      }
+    }
+  };
+
+  const loadRepoFile = async (
+    file: RepoTreeItem,
+    ref = repoInfo?.default_branch ?? "HEAD",
+    requestKey = `${currentOwner}/${currentRepo}`,
+  ) => {
+    setSelectedRepoFile(file);
+    setLoadingRepoFile(true);
+    setRepoFileContent(null);
+
+    try {
+      const response = await fetch(
+        `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}&path=${encodeURIComponent(file.path)}&ref=${encodeURIComponent(ref)}`,
+        { headers: getReadHeaders() },
+      );
+      if (repoKeyRef.current !== requestKey) return;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to fetch file content");
+      }
+      const text = await response.text();
+      if (repoKeyRef.current !== requestKey) return;
+      setRepoFileContent(text);
+      setRepoFileDraft(text);
+      setIsEditingRepoFile(false);
+      setRepoCommitMessage(`Update ${file.path}`);
+    } catch (err) {
+      if (repoKeyRef.current !== requestKey) return;
+      const message = err instanceof Error ? err.message : "File content unavailable.";
+      setRepoFileContent(message);
+      setRepoFileDraft(message);
+      setIsEditingRepoFile(false);
+    } finally {
+      if (repoKeyRef.current === requestKey) {
+        setLoadingRepoFile(false);
+      }
+    }
+  };
+
+  const commitRepoFile = async () => {
+    if (!selectedRepoFile || repoFileContent == null) return;
+    const message = repoCommitMessage.trim();
+    const branch = repoInfo?.default_branch;
+
+    if (!message) {
+      setWriteError("Commit message is required.");
+      return;
+    }
+
+    if (!branch) {
+      setWriteError("Target branch is unavailable.");
+      return;
+    }
+
+    if (repoFileDraft === repoFileContent) {
+      setWriteError("No file changes to commit.");
+      return;
+    }
+
+    setCommittingRepoFile(true);
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "PUT",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            path: selectedRepoFile.path,
+            content: repoFileDraft,
+            message,
+            branch,
+            sha: selectedRepoFile.sha,
+          }),
+        },
+      );
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Server responded with ${response.status}`);
+      }
+
+      const nextSha = data.content?.sha;
+      if (typeof nextSha === "string") {
+        setSelectedRepoFile((current) =>
+          current ? { ...current, sha: nextSha } : current,
+        );
+        setRepoTree((current) =>
+          current.map((item) =>
+            item.path === selectedRepoFile.path ? { ...item, sha: nextSha } : item,
+          ),
+        );
+      }
+
+      setRepoFileContent(repoFileDraft);
+      setIsEditingRepoFile(false);
+      setRepoCommitMessage(`Update ${selectedRepoFile.path}`);
+    } catch (err) {
+      setWriteError(err instanceof Error ? err.message : "Failed to commit file.");
+    } finally {
+      setCommittingRepoFile(false);
     }
   };
 
@@ -2821,6 +3126,160 @@ export default function App() {
       }
     }
   };
+
+  const refreshSelectedPullSnapshot = async (pullNumber: number) => {
+    const requestKey = `${currentOwner}/${currentRepo}`;
+
+    try {
+      const [
+        pullRes,
+        filesRes,
+        commentsRes,
+        reviewCommentsRes,
+        checksRes,
+        commitsRes,
+        reviewsRes,
+        timelineRes,
+        editsRes,
+      ] = await Promise.all([
+        fetch(`/api/pulls/${pullNumber}?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/files?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/comments?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/review-comments?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/checks?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/commits?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/reviews?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/timeline?owner=${currentOwner}&repo=${currentRepo}`),
+        fetch(`/api/pulls/${pullNumber}/edits?owner=${currentOwner}&repo=${currentRepo}`),
+      ]);
+
+      if (repoKeyRef.current !== requestKey) return;
+
+      if (pullRes.ok) {
+        const pull = await pullRes.json();
+        setSelectedPull(pull);
+        setPulls((current) =>
+          current.map((item) => (item.number === pull.number ? pull : item)),
+        );
+      }
+
+      if (filesRes.ok) {
+        const nextFiles = await filesRes.json();
+        setFiles(nextFiles);
+        setSelectedFile((current) => {
+          if (!current) return nextFiles[0] ?? null;
+          return nextFiles.find((file: ChangedFile) => file.filename === current.filename) ?? nextFiles[0] ?? null;
+        });
+      }
+
+      if (commentsRes.ok) setComments(await commentsRes.json());
+      if (reviewCommentsRes.ok) setReviewComments(await reviewCommentsRes.json());
+      if (commitsRes.ok) setCommits(await commitsRes.json());
+      if (reviewsRes.ok) setReviews(await reviewsRes.json());
+      if (timelineRes.ok) setTimelineEvents(await timelineRes.json());
+      if (editsRes.ok) setContentEdits(await editsRes.json());
+
+      if (checksRes.ok) {
+        const data = await checksRes.json();
+        setCheckRuns(data.check_runs || []);
+        setCheckSummary({
+          mergeable: data.mergeable,
+          merge_state_status: data.merge_state_status,
+        });
+      }
+
+      setLiveLastUpdate(new Date().toISOString());
+    } catch (err) {
+      if (repoKeyRef.current !== requestKey) return;
+      console.error("Live pull refresh error:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || viewMode !== "pulls") return;
+
+    let refreshInFlight = false;
+    let refreshQueued = false;
+    let isClosed = false;
+    let fallbackTimer: number | null = null;
+    let socket: WebSocket | null = null;
+
+    const refreshLiveData = async () => {
+      if (refreshInFlight) {
+        refreshQueued = true;
+        return;
+      }
+
+      refreshInFlight = true;
+      do {
+        refreshQueued = false;
+        if (selectedPull) {
+          await refreshSelectedPullSnapshot(selectedPull.number);
+        } else {
+          await fetchPulls(1, true);
+          setLiveLastUpdate(new Date().toISOString());
+        }
+      } while (refreshQueued && !isClosed);
+      refreshInFlight = false;
+    };
+
+    const startHttpFallback = () => {
+      if (isClosed || fallbackTimer) return;
+      void refreshLiveData();
+      fallbackTimer = window.setInterval(() => {
+        void refreshLiveData();
+      }, 15000);
+    };
+
+    try {
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${protocol}://${window.location.host}/api/live`);
+
+      socket.addEventListener("open", () => {
+        if (isClosed || !socket) return;
+        socket.send(JSON.stringify({
+          type: "subscribe",
+          owner: currentOwner,
+          repo: currentRepo,
+          pullNumber: selectedPull?.number ?? null,
+        }));
+      });
+
+      socket.addEventListener("message", (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type !== "refresh") return;
+          if (message.owner !== currentOwner || message.repo !== currentRepo) return;
+          if (selectedPull && message.pullNumber && message.pullNumber !== selectedPull.number) return;
+          void refreshLiveData();
+        } catch {
+          // Ignore malformed live messages; the next valid tick will refresh state.
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        startHttpFallback();
+      });
+
+      socket.addEventListener("error", () => {
+        startHttpFallback();
+      });
+    } catch {
+      startHttpFallback();
+    }
+
+    return () => {
+      isClosed = true;
+      if (fallbackTimer) {
+        window.clearInterval(fallbackTimer);
+      }
+      if (socket?.readyState === WebSocket.CONNECTING) {
+        socket.addEventListener("open", () => socket?.close(), { once: true });
+      } else {
+        socket?.close();
+      }
+    };
+  }, [currentOwner, currentRepo, selectedPull?.number, stateFilter, viewMode]);
 
   if (!isVerified) {
     return (
@@ -3150,9 +3609,18 @@ export default function App() {
 
           <button
             onClick={() =>
-              viewMode === "pulls" ? fetchPulls(1, true) : fetchBranches()
+              viewMode === "pulls"
+                ? fetchPulls(1, true)
+                : viewMode === "branches"
+                  ? fetchBranches()
+                  : fetchRepoTree()
             }
             className="p-2 lg:p-2.5 border border-white/[0.05] bg-white/[0.01] hover:border-white/[0.1] hover:bg-white/[0.025] transition-all group shrink-0 rounded-lg"
+            title={
+              viewMode === "pulls" && liveLastUpdate
+                ? `Refresh. Last live update ${new Date(liveLastUpdate).toLocaleTimeString()}`
+                : "Refresh"
+            }
           >
             <RefreshCw
               className={cn(
@@ -3404,7 +3872,7 @@ export default function App() {
               )}
 
               {authUser && savedPulls.length > 0 && (
-                <div className="space-y-2">
+                <div data-e2e="sidebar-saved-pulls" className="space-y-2">
                   <button
                     type="button"
                     onClick={() => setIsSidebarSavedPullsOpen((current) => !current)}
@@ -3441,11 +3909,11 @@ export default function App() {
                   )}
                 </div>
               )}
-              <div className="flex gap-2 border border-white/5 bg-black/20 rounded-xl p-1">
+              <div className="grid grid-cols-3 gap-1 border border-white/5 bg-black/20 rounded-xl p-1">
                 <button
                   onClick={() => setViewMode("pulls")}
                   className={cn(
-                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.24em] transition-all relative rounded-lg",
+                    "py-2 text-[9px] font-bold uppercase tracking-[0.2em] transition-all relative rounded-lg",
                     viewMode === "pulls"
                       ? "bg-white/[0.04] text-white"
                       : "text-white/25 hover:text-white/45",
@@ -3462,7 +3930,7 @@ export default function App() {
                 <button
                   onClick={() => setViewMode("branches")}
                   className={cn(
-                    "flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.24em] transition-all relative rounded-lg",
+                    "py-2 text-[9px] font-bold uppercase tracking-[0.2em] transition-all relative rounded-lg",
                     viewMode === "branches"
                       ? "bg-white/[0.04] text-white"
                       : "text-white/25 hover:text-white/45",
@@ -3470,6 +3938,26 @@ export default function App() {
                 >
                   Branches
                   {viewMode === "branches" && (
+                    <motion.div
+                      layoutId="viewMode"
+                      className="absolute inset-x-3 bottom-0 h-px bg-brand-orange"
+                    />
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab("diff");
+                    setViewMode("code");
+                  }}
+                  className={cn(
+                    "py-2 text-[9px] font-bold uppercase tracking-[0.2em] transition-all relative rounded-lg",
+                    viewMode === "code"
+                      ? "bg-white/[0.04] text-white"
+                      : "text-white/25 hover:text-white/45",
+                  )}
+                >
+                  Code
+                  {viewMode === "code" && (
                     <motion.div
                       layoutId="viewMode"
                       className="absolute inset-x-3 bottom-0 h-px bg-brand-orange"
@@ -3484,12 +3972,16 @@ export default function App() {
                 <div className="flex items-center gap-2 text-white/20">
                   <Activity className="w-3 h-3" />
                   <h2 className="text-[9px] font-bold uppercase tracking-[0.36em]">
-                    {viewMode === "pulls" ? "Stream" : "Network"}
+                    {viewMode === "pulls" ? "Stream" : viewMode === "branches" ? "Network" : "Explore"}
                   </h2>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="px-2 py-1 text-[9px] font-mono text-white/45 bg-white/[0.03] border border-white/5 rounded-md">
-                    {viewMode === "pulls" ? pulls.length : branches.length}
+                    {viewMode === "pulls"
+                      ? pulls.length
+                      : viewMode === "branches"
+                        ? branches.length
+                        : repoFiles.length}
                   </span>
                   <button
                     onClick={() => setIsSidebarOpen(false)}
@@ -3518,6 +4010,17 @@ export default function App() {
                   ))}
                 </div>
               )}
+
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-white/18" />
+                <input
+                  type="search"
+                  value={repoSearchQuery}
+                  onChange={(event) => setRepoSearchQuery(event.target.value)}
+                  placeholder={viewMode === "code" ? "Search repository" : "Search diffs"}
+                  className="w-full rounded-xl border border-white/5 bg-black/20 py-2.5 pl-8 pr-3 text-[10px] font-mono text-white/60 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                />
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -3532,7 +4035,13 @@ export default function App() {
                 <div className="p-12 text-center space-y-4">
                   <p className="text-xs text-rose-500 font-mono">{error}</p>
                   <button
-                    onClick={() => fetchPulls(1, true)}
+                    onClick={() =>
+                      viewMode === "pulls"
+                        ? fetchPulls(1, true)
+                        : viewMode === "branches"
+                          ? fetchBranches(1, true)
+                          : fetchRepoTree()
+                    }
                     className="text-[10px] uppercase tracking-widest text-brand-orange border-b border-brand-orange/20"
                   >
                     Try Again
@@ -3540,6 +4049,39 @@ export default function App() {
                 </div>
               ) : (
                 <div className="p-2 space-y-1.5">
+                  {normalizedRepoSearchQuery && repoSearchResults.length > 0 && (
+                    <div className="space-y-1.5 border-b border-white/5 pb-2">
+                      {repoSearchResults.slice(0, 10).map((result) => (
+                        <button
+                          key={`${result.scope}-${result.path}`}
+                          onClick={() => {
+                            if (result.scope === "diff" && result.file) {
+                              setActiveTab("diff");
+                              setSelectedFile(result.file);
+                            } else if (result.repoItem) {
+                              setViewMode("code");
+                              loadRepoFile(result.repoItem);
+                            }
+                            setIsSidebarOpen(false);
+                          }}
+                          className="w-full rounded-lg border border-white/5 bg-white/[0.012] px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.025]"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate text-[9px] font-mono text-white/50">
+                              {result.path}
+                            </span>
+                            <span className="shrink-0 text-[7px] uppercase tracking-[0.18em] text-brand-orange/55">
+                              {result.scope}
+                            </span>
+                          </div>
+                          <div className="truncate pt-1 text-[8px] uppercase tracking-[0.14em] text-white/18">
+                            {result.detail}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {viewMode === "pulls"
                     ? pulls.map((pull) => (
                         <button
@@ -3601,7 +4143,8 @@ export default function App() {
                           </div>
                         </button>
                       ))
-                    : branches.map((branch) => (
+                    : viewMode === "branches"
+                      ? branches.map((branch) => (
                         <button
                           key={branch.name}
                           onClick={() => {
@@ -3652,9 +4195,53 @@ export default function App() {
                             </div>
                           </div>
                         </button>
+                      ))
+                      : visibleRepoFiles.map((file) => (
+                        <button
+                          key={file.path}
+                          onClick={() => {
+                            loadRepoFile(file);
+                            setIsSidebarOpen(false);
+                          }}
+                          className={cn(
+                            "w-full text-left p-4 lg:p-5 transition-all border border-transparent hover:border-white/5 hover:bg-white/[0.02] relative group rounded-xl",
+                            selectedRepoFile?.path === file.path
+                              ? "bg-white/[0.03] border-white/6"
+                              : "",
+                          )}
+                        >
+                          {selectedRepoFile?.path === file.path && (
+                            <motion.div
+                              layoutId="active-indicator"
+                              className="absolute left-0 top-3 bottom-3 w-px bg-brand-orange"
+                            />
+                          )}
+
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-[9px] font-mono text-white/35">
+                              <FileCode className="h-3 w-3 shrink-0 text-white/20" />
+                              <span className="truncate">{file.path}</span>
+                            </div>
+                            <div className="text-[8px] uppercase tracking-[0.16em] text-white/16">
+                              {file.size != null ? `${file.size.toLocaleString()} bytes` : "repository file"}
+                            </div>
+                          </div>
+                        </button>
                       ))}
 
-                  {hasMore && (
+                  {viewMode === "code" && repoTreeTruncated && (
+                    <div className="p-4 text-[9px] uppercase tracking-[0.18em] text-amber-300/45">
+                      Repository tree is truncated by GitHub.
+                    </div>
+                  )}
+
+                  {viewMode === "code" && !loadingRepoTree && visibleRepoFiles.length === 0 && (
+                    <div className="p-8 text-center text-[10px] uppercase tracking-[0.2em] opacity-20 italic">
+                      No repository files found
+                    </div>
+                  )}
+
+                  {hasMore && viewMode !== "code" && (
                     <div className="p-6 flex justify-center">
                       <button
                         onClick={loadMore}
@@ -3725,12 +4312,14 @@ export default function App() {
         {/* Diff Content View */}
         <section className="flex-1 min-h-full bg-onyx relative overflow-y-auto custom-scrollbar">
           <AnimatePresence mode="wait">
-            {selectedPull || selectedBranch ? (
+            {selectedPull || selectedBranch || viewMode === "code" ? (
               <motion.div
                 key={
                   selectedPull
                     ? `pull-${selectedPull.id}`
-                    : `branch-${selectedBranch!.name}`
+                    : selectedBranch
+                      ? `branch-${selectedBranch.name}`
+                      : `code-${currentOwner}-${currentRepo}`
                 }
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -3743,11 +4332,15 @@ export default function App() {
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 bg-brand-orange" />
                       <span className="text-[9px] uppercase tracking-[0.4em] font-medium opacity-30">
-                        {selectedPull ? "Pull Request" : "Branch View"}
+                        {selectedPull ? "Pull Request" : selectedBranch ? "Branch View" : "Repository Code"}
                       </span>
                     </div>
                     <h2 className="text-3xl sm:text-4xl lg:text-7xl font-serif italic tracking-tighter leading-[0.95] lg:leading-[0.85] break-words">
-                      {selectedPull ? selectedPull.title : selectedBranch!.name}
+                      {selectedPull
+                        ? selectedPull.title
+                        : selectedBranch
+                          ? selectedBranch.name
+                          : `${currentOwner}/${currentRepo}`}
                     </h2>
                       <div className="flex flex-wrap gap-8 items-center pt-2">
                         {selectedPull && (
@@ -3834,8 +4427,9 @@ export default function App() {
                             ? new Date(
                                 selectedPull.created_at,
                               ).toLocaleDateString()
-                            : "Comparing head against " +
-                              repoInfo?.default_branch}
+                            : selectedBranch
+                              ? "Comparing head against " + repoInfo?.default_branch
+                              : `${repoFiles.length.toLocaleString()} files on ${repoInfo?.default_branch ?? "default branch"}`}
                         </p>
                       </div>
                     </div>
@@ -3845,7 +4439,9 @@ export default function App() {
                     href={
                       selectedPull
                         ? selectedPull.html_url
-                        : `${repoInfo?.html_url}/tree/${selectedBranch!.name}`
+                        : selectedBranch
+                          ? `${repoInfo?.html_url}/tree/${selectedBranch.name}`
+                          : repoInfo?.html_url
                     }
                     target="_blank"
                     rel="noreferrer"
@@ -3867,7 +4463,7 @@ export default function App() {
                           : "text-white/20 hover:text-white/40",
                       )}
                     >
-                      Diff
+                      {viewMode === "code" ? "Code" : "Diff"}
                       {activeTab === "diff" && (
                         <motion.div
                           layoutId="activeTab"
@@ -3921,29 +4517,185 @@ export default function App() {
                         )}
                       </button>
                     )}
-                    <button
-                      onClick={() => setActiveTab("timeline")}
-                      className={cn(
-                        "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
-                        activeTab === "timeline"
-                          ? "text-brand-orange"
-                          : "text-white/20 hover:text-white/40",
-                      )}
-                    >
-                      History
-                        {activeTab === "timeline" && (
-                          <motion.div
-                            layoutId="activeTab"
-                            className="absolute bottom-0 left-0 right-0 h-[1px] bg-brand-orange"
-                          />
+                    {viewMode !== "code" && (
+                      <button
+                        onClick={() => setActiveTab("timeline")}
+                        className={cn(
+                          "min-w-0 flex-1 px-3 sm:px-8 py-4 sm:py-5 text-[8px] sm:text-[9px] uppercase tracking-[0.24em] sm:tracking-[0.4em] font-medium transition-all relative overflow-hidden group flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap",
+                          activeTab === "timeline"
+                            ? "text-brand-orange"
+                            : "text-white/20 hover:text-white/40",
                         )}
-                      </button>
+                      >
+                        History
+                          {activeTab === "timeline" && (
+                            <motion.div
+                              layoutId="activeTab"
+                              className="absolute bottom-0 left-0 right-0 h-[1px] bg-brand-orange"
+                            />
+                          )}
+                        </button>
+                    )}
                     </div>
                   </div>
 
                 {/* Tab Content */}
                 <div className="space-y-12 min-h-[600px]">
-                  {activeTab === "timeline" ? (
+                  {viewMode === "code" ? (
+                    <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                          <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
+                            Repository Files
+                          </h3>
+                          <span className="text-[10px] font-mono text-white/10">
+                            {visibleRepoFiles.length}
+                          </span>
+                        </div>
+                        <div className="flex max-h-[300px] flex-col overflow-y-auto rounded-xl border border-white/5 bg-onyx/40 lg:max-h-[600px] custom-scrollbar">
+                          {visibleRepoFiles.slice(0, 120).map((file) => (
+                            <button
+                              key={file.path}
+                              onClick={() => loadRepoFile(file)}
+                              className={cn(
+                                "relative border-b border-white/5 p-4 text-left transition-all group",
+                                selectedRepoFile?.path === file.path
+                                  ? "bg-brand-orange/5"
+                                  : "hover:bg-white/[0.02]",
+                              )}
+                            >
+                              {selectedRepoFile?.path === file.path && (
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange" />
+                              )}
+                              <div className="space-y-1.5">
+                                <p
+                                  className={cn(
+                                    "truncate text-[10px] font-mono transition-colors",
+                                    selectedRepoFile?.path === file.path
+                                      ? "text-brand-orange"
+                                      : "text-white/40 group-hover:text-white/60",
+                                  )}
+                                >
+                                  {file.path}
+                                </p>
+                                <p className="text-[8px] uppercase tracking-[0.16em] text-white/14">
+                                  {file.size != null ? `${file.size.toLocaleString()} bytes` : "repository file"}
+                                </p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div
+                        className={cn(
+                          "min-w-0 space-y-8 transition-all duration-500",
+                          isFullscreen &&
+                            "fixed inset-0 z-[100] bg-onyx p-8 sm:p-12 lg:p-16 overflow-y-auto custom-scrollbar",
+                        )}
+                      >
+                        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                          <div className="flex items-center gap-2 text-white/20">
+                            <Code className="w-3 h-3" />
+                            <h3 className="text-[9px] font-bold uppercase tracking-[0.4em]">
+                              Repository Buffer
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-6">
+                            <div className="text-[9px] font-mono uppercase tracking-widest text-white/20 hidden sm:block">
+                              {selectedRepoFile?.path || "No file selected"}
+                            </div>
+                            {authUser && selectedRepoFile && repoFileContent != null && (
+                              <button
+                                onClick={() => {
+                                  setWriteError(null);
+                                  if (isEditingRepoFile) {
+                                    setRepoFileDraft(repoFileContent);
+                                  }
+                                  setIsEditingRepoFile((current) => !current);
+                                }}
+                                className="text-[9px] uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity"
+                              >
+                                {isEditingRepoFile ? "Cancel Edit" : "Edit"}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setIsFullscreen(!isFullscreen)}
+                              className="text-[9px] uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity flex items-center gap-2 group"
+                            >
+                              {isFullscreen ? (
+                                <>
+                                  Minimize <Minimize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                </>
+                              ) : (
+                                <>
+                                  Maximize <Maximize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className={cn("relative overflow-hidden rounded-2xl border border-white/5 bg-panel", isFullscreen && "max-w-7xl mx-auto")}>
+                          {loadingRepoTree || loadingRepoFile ? (
+                            <div className="flex flex-col items-center justify-center space-y-6 p-20 text-center lg:p-32">
+                              <div className="h-1.5 w-1.5 animate-pulse bg-brand-orange" />
+                              <p className="text-[9px] font-medium uppercase tracking-[0.5em] text-brand-orange/40">
+                                Reading Repository...
+                              </p>
+                            </div>
+                          ) : (
+                            <div
+                              className={cn(
+                                "overflow-auto custom-scrollbar",
+                                isFullscreen
+                                  ? "max-h-[calc(100vh-16rem)]"
+                                  : "max-h-[600px] lg:max-h-[800px]",
+                              )}
+                            >
+                              {isEditingRepoFile ? (
+                                <textarea
+                                  value={repoFileDraft}
+                                  onChange={(event) => setRepoFileDraft(event.target.value)}
+                                  spellCheck={false}
+                                  className="min-h-[520px] w-full resize-none bg-onyx/40 p-4 font-mono text-[10px] leading-relaxed text-white/70 outline-none sm:p-6 sm:text-xs lg:p-8"
+                                />
+                              ) : (
+                                <pre className="w-fit min-w-full whitespace-pre p-4 text-[10px] leading-relaxed text-white/60 !m-0 !bg-onyx/40 sm:p-6 sm:text-xs lg:p-8">
+                                  {repoFileContent ??
+                                    (selectedRepoFile
+                                      ? "File content unavailable."
+                                      : "Select a repository file to inspect its content.")}
+                                </pre>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {isEditingRepoFile && (
+                          <div className="space-y-3 rounded-xl border border-white/5 bg-white/[0.012] p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row">
+                              <input
+                                value={repoCommitMessage}
+                                onChange={(event) => setRepoCommitMessage(event.target.value)}
+                                placeholder="Commit message"
+                                className="min-w-0 flex-1 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                              />
+                              <button
+                                onClick={commitRepoFile}
+                                disabled={committingRepoFile || !repoCommitMessage.trim() || repoFileDraft === repoFileContent}
+                                className="rounded-lg border border-brand-orange/25 bg-brand-orange/10 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange transition-colors hover:bg-brand-orange/15 disabled:cursor-not-allowed disabled:opacity-35"
+                              >
+                                {committingRepoFile ? "Committing" : `Commit to ${repoInfo?.default_branch ?? "branch"}`}
+                              </button>
+                            </div>
+                            <p className="text-[9px] uppercase tracking-[0.16em] text-white/20">
+                              Commits use your signed-in GitHub account.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : activeTab === "timeline" ? (
                     <div className="w-full min-w-0 max-w-3xl mx-auto overflow-hidden space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       <div className="relative space-y-12 lg:space-y-16 py-4">
                         {getTimeline().length > 0 ? (
@@ -4015,23 +4767,23 @@ export default function App() {
                           {files.length > 0 ? (
                             files.map((file) => (
                               <button
-                                key={file.sha}
+                                key={file.filename}
                                 onClick={() => setSelectedFile(file)}
                                 className={cn(
                                   "text-left p-4 border-b border-white/5 transition-all group relative",
-                                  selectedFile?.sha === file.sha
+                                  selectedFile?.filename === file.filename
                                     ? "bg-brand-orange/5"
                                     : "hover:bg-white/[0.02]",
                                 )}
                               >
-                                {selectedFile?.sha === file.sha && (
+                                {selectedFile?.filename === file.filename && (
                                   <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-orange" />
                                 )}
                                 <div className="space-y-2">
                                   <p
                                     className={cn(
                                       "text-[10px] font-mono truncate transition-colors",
-                                      selectedFile?.sha === file.sha
+                                      selectedFile?.filename === file.filename
                                         ? "text-brand-orange"
                                         : "text-white/40 group-hover:text-white/60",
                                     )}
@@ -5080,11 +5832,11 @@ export default function App() {
 
               <div className="flex-1 space-y-3 overflow-y-auto px-5 py-5 sm:px-6 custom-scrollbar">
                 <p className="text-[13px] leading-relaxed text-white/50">
-                  DIFF by Coccinella Labs uses GitHub sign-in to read pull requests, sync preferences, and publish comments or reviews only when you choose.
+                  DIFF by Coccinella Labs uses GitHub sign-in to read pull requests, sync preferences, and publish comments, reviews, or file commits only when you choose.
                 </p>
 
                 <p className="text-[11px] leading-relaxed text-white/30">
-                  Posts are made from your GitHub account only after you choose them.
+                  GitHub writes are made from your account only after you choose them.
                 </p>
 
                 <div className="flex flex-wrap gap-4 pt-1 text-[9px] font-medium uppercase tracking-[0.16em]">
@@ -5141,53 +5893,42 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-panel border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[84vh]"
+              className="relative flex max-h-[84vh] w-full max-w-[32rem] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel shadow-2xl"
             >
-              {/* Modal Header */}
-              <div className="px-4 py-3 sm:px-6 lg:px-8 lg:py-5 flex items-center justify-between border-b border-white/5">
-                <div className="flex items-center gap-4">
-                  <h2 className="text-[10px] font-medium uppercase tracking-[0.24em] text-white/30">Updates</h2>
+              <div className="border-b border-white/[0.04] px-5 py-4 sm:px-6">
+                <div className="space-y-1">
+                  <h2 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/38">
+                    Updates
+                  </h2>
+                  <div className="text-[11px] leading-none text-white/24">
+                    {releasedUpdates.length} releases
+                  </div>
                 </div>
-                <button
-                  onClick={() => setShowUpdates(false)}
-                  className="text-[9px] uppercase tracking-[0.2em] text-white/10 hover:text-white/40 transition-all font-medium"
-                >
-                  Close
-                </button>
               </div>
 
-              {/* Modal Content */}
-              <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 lg:px-8 lg:py-6 space-y-6 custom-scrollbar">
-                <section className="space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] uppercase tracking-[0.28em] font-medium text-white/20">
-                      Released
-                    </span>
-                    <span className="text-[9px] font-mono text-white/10">
-                      {releasedUpdates.length} entries
-                    </span>
-                  </div>
-                  <div className="border-t border-white/5">
+              <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6 custom-scrollbar">
+                <section className="space-y-2">
+                  <div>
                     {releasedUpdates.map((update, idx) => (
                       <div
                         key={update.version}
                         className={cn(
-                          "py-3.5 sm:py-5 space-y-2",
-                          idx !== releasedUpdates.length - 1 && "border-b border-white/5",
+                          "space-y-2 py-3",
+                          idx !== releasedUpdates.length - 1 && "border-b border-white/[0.04]",
                         )}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 space-y-0.5">
                             <div className="flex items-center gap-2.5">
-                              <span className="text-[10px] font-mono text-white/20">
+                              <span className="text-[10px] font-mono text-white/22">
                                 {update.version}
                               </span>
-                              <span className="w-1 h-1 rounded-full bg-white/10" />
-                              <span className="text-[15px] sm:text-sm font-medium text-white/70 leading-tight">
+                              <span className="h-1 w-1 rounded-full bg-white/10" />
+                              <span className="text-[13px] font-medium leading-tight text-white/58">
                                 {update.title}
                               </span>
                             </div>
-                            <p className="text-[11px] text-white/30 leading-relaxed">
+                            <p className="text-[11px] leading-relaxed text-white/30">
                               {update.description}
                             </p>
                           </div>
@@ -5196,8 +5937,8 @@ export default function App() {
                         <div className="grid grid-cols-1 gap-1">
                           {update.details.map((detail, dIdx) => (
                             <div key={dIdx} className="flex items-start gap-3">
-                              <div className="mt-1.5 w-1 h-px bg-white/10 shrink-0" />
-                              <span className="text-[10px] text-white/40 leading-relaxed">
+                              <div className="mt-1.5 h-px w-1 shrink-0 bg-white/10" />
+                              <span className="text-[10px] leading-relaxed text-white/36">
                                 {detail}
                               </span>
                             </div>
@@ -5209,33 +5950,30 @@ export default function App() {
                 </section>
 
                 {plannedUpdates.length > 0 && (
-                  <section className="space-y-3">
-                    <span className="text-[9px] uppercase tracking-[0.28em] font-medium text-white/15">
+                  <section className="space-y-3 border-t border-white/[0.04] pt-4">
+                    <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-white/18">
                       Planned
                     </span>
-                    <div className="border border-white/5 rounded-2xl overflow-hidden bg-transparent">
+                    <div>
                       {plannedUpdates.map((update, idx) => (
                         <div
                           key={update.version}
                           className={cn(
-                            "px-4 py-4 sm:px-5 sm:py-5 space-y-3 opacity-80",
-                            idx !== plannedUpdates.length - 1 && "border-b border-white/5",
+                            "space-y-2 py-2 opacity-80",
+                            idx !== plannedUpdates.length - 1 && "border-b border-white/[0.04]",
                         )}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 space-y-1">
                               <div className="flex items-center gap-2.5">
-                                <span className="text-[10px] font-mono text-white/15">
+                                <span className="text-[10px] font-mono text-white/16">
                                   {update.version}
                                 </span>
-                                <span className="text-[7px] uppercase tracking-[0.24em] px-1.5 py-0.5 border border-white/5 text-white/20 rounded-md">
-                                  Planned
-                                </span>
                               </div>
-                              <span className="text-[15px] sm:text-sm font-medium text-white/50 leading-tight">
+                              <span className="text-[13px] font-medium leading-tight text-white/45">
                                 {update.title}
                               </span>
-                              <p className="text-[11px] text-white/25 leading-relaxed">
+                              <p className="text-[11px] leading-relaxed text-white/24">
                                 {update.description}
                               </p>
                             </div>
@@ -5244,8 +5982,8 @@ export default function App() {
                           <div className="grid grid-cols-1 gap-1.5">
                             {update.details.map((detail, dIdx) => (
                               <div key={dIdx} className="flex items-start gap-3">
-                                <div className="mt-1.5 w-1 h-px bg-white/8 shrink-0" />
-                                <span className="text-[10px] text-white/32 leading-relaxed">
+                                <div className="mt-1.5 h-px w-1 shrink-0 bg-white/8" />
+                                <span className="text-[10px] leading-relaxed text-white/30">
                                   {detail}
                                 </span>
                               </div>
@@ -5256,6 +5994,14 @@ export default function App() {
                     </div>
                   </section>
                 )}
+              </div>
+              <div className="flex justify-end border-t border-white/[0.04] px-5 py-4 sm:px-6">
+                <button
+                  onClick={() => setShowUpdates(false)}
+                  className="rounded-lg px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/28 transition-colors hover:bg-white/[0.03] hover:text-white/58"
+                >
+                  Close
+                </button>
               </div>
             </motion.div>
           </div>

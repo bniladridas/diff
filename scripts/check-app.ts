@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-DIFF
 
 import "dotenv/config";
+import { WebSocket } from "ws";
 
 type CheckStatus = "pass" | "warn" | "fail" | "skip";
 
@@ -14,6 +15,11 @@ interface CheckResult {
 interface RepoInfo {
   default_branch?: string;
   html_url?: string;
+}
+
+interface RepoTreePayload {
+  tree?: Array<{ path?: string; type?: string; size?: number }>;
+  truncated?: boolean;
 }
 
 interface PullRequestSummary {
@@ -48,6 +54,7 @@ interface CheckRunDetails {
 }
 
 const BASE_URL = process.env.DIFF_BASE_URL || "http://localhost:3000";
+const LIVE_URL = BASE_URL.replace(/^http/, "ws").replace(/\/$/, "") + "/api/live";
 const DEFAULT_OWNER = process.env.GITHUB_REPO_OWNER || "harpertoken";
 const DEFAULT_REPO = process.env.GITHUB_REPO_NAME || "harper";
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
@@ -337,6 +344,63 @@ async function checkWritePath(owner: string, repo: string, pullNumber: number) {
   );
 }
 
+async function checkLiveChannel(owner: string, repo: string, pullNumber?: number) {
+  const started = nowMs();
+
+  await new Promise<void>((resolve) => {
+    const socket = new WebSocket(LIVE_URL);
+    const timer = setTimeout(() => {
+      record({
+        name: "live-channel",
+        status: "fail",
+        durationMs: nowMs() - started,
+        detail: "subscription timed out",
+      });
+      socket.close();
+      resolve();
+    }, 3000);
+
+    socket.on("open", () => {
+      socket.send(JSON.stringify({
+        type: "subscribe",
+        owner,
+        repo,
+        pullNumber: pullNumber ?? null,
+      }));
+    });
+
+    socket.on("message", (rawMessage) => {
+      try {
+        const message = JSON.parse(rawMessage.toString());
+        if (message.type !== "subscribed") return;
+
+        clearTimeout(timer);
+        record({
+          name: "live-channel",
+          status: "pass",
+          durationMs: nowMs() - started,
+          detail: "WebSocket subscription accepted",
+        });
+        socket.close();
+        resolve();
+      } catch {
+        // Keep waiting for a valid subscription acknowledgement.
+      }
+    });
+
+    socket.on("error", (error) => {
+      clearTimeout(timer);
+      record({
+        name: "live-channel",
+        status: "fail",
+        durationMs: nowMs() - started,
+        detail: error instanceof Error ? error.message : "WebSocket error",
+      });
+      resolve();
+    });
+  });
+}
+
 async function main() {
   const shellHtml = await timedTextCheck("shell", `${BASE_URL}/`);
   assertCondition(
@@ -351,6 +415,63 @@ async function main() {
     !!repoInfo?.default_branch && !!repoInfo?.html_url,
     "repo payload includes default branch and html url",
   );
+
+  const repoTree = await timedJsonCheck<RepoTreePayload>(
+    "repo-tree",
+    `${BASE_URL}/api/repo/tree?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}&ref=${repoInfo?.default_branch ?? "HEAD"}`,
+    {},
+    [200],
+    2600,
+  );
+  const firstRepoFile = repoTree?.tree?.find((item) => item.type === "blob" && item.path);
+  assertCondition(
+    "repo-tree-shape",
+    Array.isArray(repoTree?.tree) && !!firstRepoFile,
+    "repository tree includes files",
+  );
+
+  if (firstRepoFile?.path) {
+    const repoContent = await timedTextCheck(
+      "repo-content",
+      `${BASE_URL}/api/repo/content?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}&path=${encodeURIComponent(firstRepoFile.path)}&ref=${repoInfo?.default_branch ?? "HEAD"}`,
+      {},
+      [200],
+      2200,
+    );
+    assertCondition(
+      "repo-content-shape",
+      typeof repoContent === "string",
+      `repository content route returned ${firstRepoFile.path}`,
+    );
+
+    await timedJsonCheck(
+      "repo-content-read-auth",
+      `${BASE_URL}/api/repo/content?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}&path=${encodeURIComponent(firstRepoFile.path)}&ref=${repoInfo?.default_branch ?? "HEAD"}`,
+      {
+        headers: { "X-GitHub-Provider-Token": "invalid-provider-token" },
+      },
+      [401, 503],
+      1800,
+    );
+
+    await timedJsonCheck(
+      "repo-content-write-auth",
+      `${BASE_URL}/api/repo/content?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: firstRepoFile.path,
+          content: repoContent ?? "",
+          message: "check auth guard",
+          branch: repoInfo?.default_branch ?? "HEAD",
+          sha: "",
+        }),
+      },
+      [401, 503],
+      1800,
+    );
+  }
 
   const pulls = await timedJsonCheck<PullRequestSummary[]>(
     "pulls",
@@ -367,6 +488,8 @@ async function main() {
   );
 
   const firstPull = pulls?.[0];
+  await checkLiveChannel(DEFAULT_OWNER, DEFAULT_REPO, firstPull?.number);
+
   if (!firstPull) {
     record({
       name: "pull-details",

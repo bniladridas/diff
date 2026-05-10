@@ -2,8 +2,9 @@
 
 Last updated: 2026-05-10
 
-This repository now treats the release line as:
+Release line:
 
+- `v0.4.0` Live Code Workspace
 - `v0.3.5` Sign-In Trust Update
 - `v0.3.4` Sign-In & Check Polish
 - `v0.3.3` Branch History & Mobile Annotations
@@ -17,15 +18,17 @@ This repository now treats the release line as:
 - `v0.1.1` Checks, Navigation & App Flow
 - `v0.1.0` Core Diff Engine
 
-The in-app `Updates` feed in `src/constants/updates.ts` should stay aligned with these tags and GitHub releases.
+Keep `src/constants/updates.ts` aligned with tags and GitHub releases.
+
+Keep a compact `Next` entry at the end of the in-app `Updates` feed. When bumping, move completed work into the released version entry and leave `Next` as a light holding place for the next pass.
 
 Keep update and release-note copy calm, compact, and non-pushy. Prefer maintenance-style wording such as "polish", "cleanup", "quieter", or "more consistent" when accurate; avoid marketing-heavy phrasing for routine fixes.
 
-The root `VERSION` file should stay aligned with `package.json` for each release.
+`VERSION` and `package.json` must match for each release.
 
-Release tags must be `v`-prefixed Semantic Versioning 2.0.0 values. The tag is written as `v0.3.5`; the semantic version is `0.3.5`.
+Release tags use `v`-prefixed SemVer. Example: tag `v0.4.0`, version `0.4.0`.
 
-Each stable release tag should also have a matching release branch at the same commit. Use `release/X.Y.Z` for the branch name and point it at `vX.Y.Z`; for example, `release/0.3.5` points at the same commit as `v0.3.5`.
+Each stable tag needs a matching release branch at the same commit. Example: `release/0.4.0` points at `v0.4.0`.
 
 When bumping a release, update all version-bearing release files together:
 
@@ -37,21 +40,33 @@ When bumping a release, update all version-bearing release files together:
 - `scripts/generate-release-notes.ts` examples and error text
 - `docs/workflows.md` release examples
 
-After the edits, run `node --import tsx ./scripts/generate-release-notes.ts vX.Y.Z /tmp/diff-release-notes.md` and confirm the generated changelog compares the previous release tag to the new tag.
+After bumping, run `node --import tsx ./scripts/generate-release-notes.ts vX.Y.Z /tmp/diff-release-notes.md` and confirm it compares the previous release tag to the new tag.
 
 Supabase auth expects `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in the local environment.
 
 Supabase GitHub login in this repo uses a GitHub OAuth App, not a GitHub App. The callback URL registered in GitHub must be the Supabase auth callback for the project.
 
-Per-user app state currently syncs through `public.user_preferences`, defined in `supabase/migrations/20260508_create_user_preferences.sql`, extended in `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`, and updated for the graphite theme constraint in `supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql`.
+Per-user app state syncs through `public.user_preferences`. Related migrations:
 
-The current GitHub write path uses the Supabase GitHub provider token with `repo read:user user:email` scopes and covers pull request discussion comments, inline review comments, and review submission.
+- `supabase/migrations/20260508_create_user_preferences.sql`
+- `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`
+- `supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql`
 
-The browser verifier runs anonymous coverage when no seeded session is provided. Authenticated browser verification uses `window.__DIFF_E2E__` in dev mode. Prefer `writeSessionFile()` to write `/tmp/diff-session.json` and run with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json`; `DIFF_E2E_SESSION_JSON` remains available when a file cannot be used.
+GitHub writes use the Supabase GitHub provider token with `repo read:user user:email` scopes. The write path covers PR discussion comments, inline review comments, review submission, and single-file Code view commits.
 
-If a seeded e2e run skips `signed-out-fallback`, that is expected. Snapshot seeding is meant to rehydrate auth on reload, so full signed-out reload verification still requires a manual or OAuth-driven session path.
+The browser verifier runs anonymous coverage without a seeded session. For authenticated checks, use `window.__DIFF_E2E__.writeSessionFile()` in dev mode, then run with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json`. `DIFF_E2E_SESSION_JSON` remains available when a file cannot be used.
+
+If a seeded e2e run skips `signed-out-fallback`, that is expected. Snapshot seeding rehydrates auth on reload; full signed-out reload verification still needs a manual or OAuth-driven path.
 
 `npm run check:app` treats authenticated preference and write checks as optional unless `DIFF_REQUIRE_AUTH_CHECKS=1` is set with `DIFF_SUPABASE_ACCESS_TOKEN` and `DIFF_GITHUB_PROVIDER_TOKEN`.
+
+`npm run check:e2e` keeps live write actions opt-in. Code view commit verification requires `DIFF_E2E_LIVE_CODE_COMMIT=1` and `DIFF_E2E_CODE_COMMIT_PATH`. Use a sandbox file because it creates a real GitHub commit.
+
+Live pull refresh uses `/api/live` WebSockets on a long-running Node server. Serverless deployments fall back to timed HTTP refresh. `npm run check:app` includes a local `live-channel` assertion.
+
+Code view uses `/api/repo/tree` and `/api/repo/content`. Signed-in file commits use `PUT /api/repo/content` with the current file SHA and an explicit commit message. `npm run check:app` covers these routes.
+
+The previous planned items are now part of `v0.4.0`.
 
 The strongest local verification sequence before release is:
 

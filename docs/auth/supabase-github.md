@@ -2,7 +2,7 @@
 
 # Supabase GitHub Auth
 
-DIFF uses Supabase Auth for application identity and a GitHub OAuth App for GitHub-backed sign-in. The current integration supports persisted user preferences, saved review state, pull request discussion comments, inline review comments, and review submission with the signed-in user's GitHub token.
+DIFF uses Supabase Auth for app identity and a GitHub OAuth App for GitHub-backed sign-in. Signed-in users can sync preferences, save review state, publish review actions, and commit Code view file edits.
 
 For local development, set the frontend environment variables in `.env`:
 
@@ -17,31 +17,31 @@ The preference schema is required. Apply all migrations to the same Supabase pro
 - [../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql](../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql)
 - [../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql](../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql)
 
-The first migration creates `public.user_preferences`, enables row-level security, and limits reads and writes to the authenticated owner of each row. The second migration adds JSONB columns for recent repositories and saved pull requests. The third migration extends the theme constraint for the graphite theme.
+The migrations create `public.user_preferences`, enable row-level security, add saved state columns, and allow the graphite theme.
 
-On the GitHub side, create a GitHub OAuth App rather than a GitHub App. In Supabase, open `Authentication` and then `Providers`, expand the GitHub provider, and copy the callback URL shown there. The OAuth App in GitHub should use your app URL as the homepage URL and the Supabase callback URL as the authorization callback URL. Once the OAuth App is created, copy its client ID and client secret into the Supabase GitHub provider settings and save them.
+On GitHub, create an OAuth App, not a GitHub App. In Supabase, open `Authentication` -> `Providers`, expand GitHub, and copy the callback URL. Use your app URL as the OAuth homepage URL and the Supabase callback URL as the authorization callback URL. Then copy the OAuth client ID and secret back into Supabase.
 
 Supabase also needs the application URLs registered under `Authentication` -> `URL Configuration`. At minimum, add `http://localhost:3000` for local development and the production origin you intend to deploy. The browser-side sign-in flow uses `signInWithOAuth({ provider: "github" })`, so the redirect target has to match the allowed redirect URL configuration in Supabase.
 
-If DIFF is deployed on Vercel, add the production Vercel origin or custom domain to Supabase URL Configuration. If you want GitHub sign-in to work on preview deployments too, those preview origins also need to be allowed in Supabase, because the app uses the live browser origin as the OAuth `redirectTo` target.
+For Vercel, add the production Vercel origin or custom domain. Add preview origins too if preview sign-in should work.
 
-The current GitHub write integration requests `repo`, `read:user`, and `user:email` scopes. DIFF now uses that token for pull request discussion comments, inline review comments, and review submission. The server validates the Supabase session first, then verifies that the GitHub provider token belongs to the same signed-in user before proxying write actions. This is still an OAuth-based model rather than a GitHub App installation model.
+The GitHub write integration requests `repo`, `read:user`, and `user:email` scopes. The server validates the Supabase session, verifies the provider token belongs to the same GitHub user, then proxies the requested write action. This is an OAuth model, not a GitHub App installation model.
 
 For repositories owned by an organization, the signed-in user must authorize the OAuth App and the organization may also need to approve that OAuth App under its third-party application access policy. If that approval is missing, read-only GitHub API calls can still work while write actions fail with GitHub OAuth App access restriction errors.
 
 ## Troubleshooting
 
-If the app signs in successfully but shows a preferences sync error such as `public.user_preferences` missing from the schema cache, or a theme constraint error after switching themes, the Supabase project does not yet have the required schema. Apply the migrations listed above to the same project referenced by `VITE_SUPABASE_URL`, then refresh the app and sign in again if needed.
+If sign-in works but preference sync fails, the Supabase project likely does not have the required schema. Apply the migrations listed above to the project referenced by `VITE_SUPABASE_URL`, then refresh and sign in again if needed.
 
-The browser e2e verifier supports authenticated runs by seeding a real Supabase session from the running app. In local development, sign in normally and use the dev bridge in the browser console:
+The browser e2e verifier can seed a real Supabase session from the running app. In local development, sign in normally and run this in the browser console:
 
 ```js
 await window.__DIFF_E2E__.writeSessionFile()
 ```
 
-That writes a validated session snapshot to `/tmp/diff-session.json`. Use that file with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json` when running `npm run check:e2e`. The verifier stores the Supabase session in the same browser storage key Supabase uses and stores the GitHub provider token in DIFF's own local storage key so the signed-in write path can be exercised safely.
+That writes a session snapshot to `/tmp/diff-session.json`. Use it with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json` when running `npm run check:e2e`.
 
-For non-local environments where the dev bridge cannot write files, `DIFF_E2E_SESSION_JSON` can still be used with a full session snapshot, but the file path is preferred for local development because large session JSON is easy to truncate in shells and chat tools.
+`DIFF_E2E_SESSION_JSON` can still be used with a full session snapshot, but the file path is safer for local work.
 
 Recommended local flow:
 
@@ -70,7 +70,19 @@ export DIFF_E2E_SKIP_SIGN_OUT=1
 npm run check:e2e
 ```
 
-Use `COMMENT` as the first live review event because it verifies the review submit path without mutating approval state.
+Use `COMMENT` first because it verifies the review submit path without changing approval state.
+
+Code view commits are also available as an opt-in write check. Run this only against a sandbox file and branch you are comfortable mutating:
+
+```bash
+export DIFF_E2E_LIVE_CODE_COMMIT=1
+export DIFF_E2E_CODE_COMMIT_OWNER=bniladridas
+export DIFF_E2E_CODE_COMMIT_REPO=diff
+export DIFF_E2E_CODE_COMMIT_PATH=docs/e2e-sandbox.md
+npm run check:e2e
+```
+
+The check appends a timestamped marker and verifies it through the file content route.
 
 If the authenticated write checks fail with `Bad credentials`, the GitHub provider token is stale or revoked. Sign out in DIFF, revoke the GitHub OAuth grant if needed, sign in again, and regenerate the session snapshot before rerunning the verifier.
 

@@ -8,6 +8,18 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.4.0",
+    title: "Live Code Workspace",
+    description: "Live refresh and Code view for review work.",
+    category: "feature",
+    details: [
+      "Pull requests refresh in place while you review",
+      "Repository files can be browsed from Code view",
+      "Signed-in edits can be committed with a message",
+      "Verification covers the new read and write paths"
+    ]
+  },
+  {
     version: "0.3.5",
     title: "Sign-In Trust Update",
     description: "Quieter sign-in notice and clearer product ownership.",
@@ -149,13 +161,13 @@ export const APP_UPDATES: AppUpdate[] = [
   },
   {
     version: "Next",
-    title: "Planned Features",
-    description: "Next steps for the platform.",
+    title: "Open Notes",
+    description: "Items to watch after this release.",
     category: "planned",
     details: [
-      "Live updates via WebSockets",
-      "Global full-text search across diffs",
-      "Repository-wide code exploration"
+      "Create branches and pull requests from the app",
+      "Watch for rough edges after more day-to-day use",
+      "Keep release notes compact as scope becomes clear"
     ]
-  }
+  },
 ];

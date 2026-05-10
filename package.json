@@ -1,7 +1,7 @@
 {
   "name": "diff",
   "private": true,
-  "version": "0.3.5",
+  "version": "0.4.0",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
@@ -27,6 +27,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.1.14",
     "@types/prismjs": "^1.26.6",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.16.0",
     "clsx": "^2.1.1",
@@ -41,7 +42,8 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

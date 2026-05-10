@@ -16,7 +16,7 @@ DIFF is a browser-based pull request review tool provided by Coccinella Labs Inc
 
 ## How DIFF Uses Information
 
-DIFF uses this information to sign you in, display pull request data, sync preferences, restore recent state, and publish GitHub comments or reviews when you choose those actions.
+DIFF uses this information to sign you in, display pull request data, sync preferences, restore recent state, and publish GitHub comments, reviews, or file commits when you choose those actions.
 
 Authenticated write actions are sent to GitHub as the signed-in GitHub user. DIFF does not sell personal information.
 
