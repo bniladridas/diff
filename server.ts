@@ -304,6 +304,78 @@ async function startServer() {
     }
   });
 
+  app.patch("/api/pulls/:number", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : undefined;
+      const body = typeof req.body?.body === "string" ? req.body.body : undefined;
+
+      if (title !== undefined && !title) {
+        res.status(400).json({ error: "Pull request title is required." });
+        return;
+      }
+
+      if (title === undefined && body === undefined) {
+        res.status(400).json({ error: "Pull request metadata is required." });
+        return;
+      }
+
+      const response = await axios.patch(
+        `https://api.github.com/repos/${owner}/${repo}/pulls/${number}`,
+        {
+          ...(title !== undefined ? { title } : {}),
+          ...(body !== undefined ? { body } : {}),
+        },
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            Authorization: `token ${githubProviderToken}`,
+          },
+        },
+      );
+
+      res.json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "PullUpdate");
+    }
+  });
+
+  app.put("/api/pulls/:number/labels", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const { number } = req.params;
+      const labels = Array.isArray(req.body?.labels)
+        ? req.body.labels
+            .filter((label: unknown): label is string => typeof label === "string")
+            .map((label: string) => label.trim())
+            .filter(Boolean)
+        : null;
+
+      if (!labels) {
+        res.status(400).json({ error: "Labels array is required." });
+        return;
+      }
+
+      const response = await axios.put(
+        `https://api.github.com/repos/${owner}/${repo}/issues/${number}/labels`,
+        { labels },
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            Authorization: `token ${githubProviderToken}`,
+          },
+        },
+      );
+
+      res.json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "PullLabelsUpdate");
+    }
+  });
+
   app.get("/api/pulls/:number/diff", async (req, res) => {
     try {
       const { owner, repo } = getRepoCtx(req);
@@ -877,6 +949,110 @@ async function startServer() {
       res.json(response.data);
     } catch (error: any) {
       handleError(res, error, "RepoContentWrite");
+    }
+  });
+
+  app.post("/api/repo/branch", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      const from = typeof req.body?.from === "string" ? req.body.from.trim() : "";
+
+      if (!name) {
+        res.status(400).json({ error: "Branch name is required." });
+        return;
+      }
+
+      if (!from) {
+        res.status(400).json({ error: "Base branch is required." });
+        return;
+      }
+
+      if (
+        name.startsWith("/") ||
+        name.endsWith("/") ||
+        name.includes("..") ||
+        !/^[A-Za-z0-9._/-]+$/.test(name)
+      ) {
+        res.status(400).json({ error: "Branch name contains unsupported characters." });
+        return;
+      }
+
+      const headers = {
+        Accept: "application/vnd.github.v3+json",
+        Authorization: `token ${githubProviderToken}`,
+      };
+      const baseRef = encodeURIComponent(from).replace(/%2F/g, "/");
+      const baseResponse = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${baseRef}`,
+        { headers },
+      );
+      const sha = baseResponse.data?.object?.sha;
+
+      if (typeof sha !== "string") {
+        res.status(502).json({ error: "Base branch SHA was not returned by GitHub." });
+        return;
+      }
+
+      const response = await axios.post(
+        `https://api.github.com/repos/${owner}/${repo}/git/refs`,
+        {
+          ref: `refs/heads/${name}`,
+          sha,
+        },
+        { headers },
+      );
+
+      res.status(201).json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "RepoBranchCreate");
+    }
+  });
+
+  app.post("/api/pulls", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+      const { owner, repo } = getRepoCtx(req);
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const body = typeof req.body?.body === "string" ? req.body.body : "";
+      const head = typeof req.body?.head === "string" ? req.body.head.trim() : "";
+      const base = typeof req.body?.base === "string" ? req.body.base.trim() : "";
+
+      if (!title) {
+        res.status(400).json({ error: "Pull request title is required." });
+        return;
+      }
+
+      if (!head) {
+        res.status(400).json({ error: "Pull request head branch is required." });
+        return;
+      }
+
+      if (!base) {
+        res.status(400).json({ error: "Pull request base branch is required." });
+        return;
+      }
+
+      const response = await axios.post(
+        `https://api.github.com/repos/${owner}/${repo}/pulls`,
+        {
+          title,
+          body,
+          head,
+          base,
+        },
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            Authorization: `token ${githubProviderToken}`,
+          },
+        },
+      );
+
+      res.status(201).json(response.data);
+    } catch (error: any) {
+      handleError(res, error, "PullCreate");
     }
   });
 

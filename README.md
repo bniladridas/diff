@@ -6,7 +6,7 @@ DIFF is a focused interface for reading pull requests without the surrounding no
 
 The app is a React frontend with Tailwind styling and a small Node server for GitHub API access. It supports live review refresh with HTTP fallback, Code view repository browsing, Supabase-backed user state, and GitHub-backed sign-in for authenticated review actions.
 
-Authenticated GitHub writes require the GitHub OAuth App to be authorized by the signed-in user. Organization-owned repositories may also require that organization's OAuth App access approval. Signed-in users can publish review comments and commit Code view edits with an explicit commit message.
+Authenticated GitHub writes require the signed-in user's GitHub OAuth approval. Organization repositories may also require OAuth App approval. Signed-in users can publish reviews, commit Code view edits, create branches, open PRs, and update PR metadata.
 
 Setup and operational detail live in dedicated docs:
 

@@ -8,6 +8,18 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.5.0",
+    title: "Code Branches",
+    description: "Branch, edit, and open PRs from Code view.",
+    category: "feature",
+    details: [
+      "Create working branches and PRs",
+      "Edit PR title, body, and labels",
+      "Syntax-highlight repository files",
+      "Read from the active branch before commits"
+    ]
+  },
+  {
     version: "0.4.0",
     title: "Live Code Workspace",
     description: "Live refresh and Code view for review work.",
@@ -165,8 +177,7 @@ export const APP_UPDATES: AppUpdate[] = [
     description: "Items to watch after this release.",
     category: "planned",
     details: [
-      "Create branches and pull requests from the app",
-      "Watch for rough edges after more day-to-day use",
+      "Polish the new flows",
       "Keep release notes compact as scope becomes clear"
     ]
   },

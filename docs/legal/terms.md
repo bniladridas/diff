@@ -8,7 +8,7 @@ DIFF is provided by Coccinella Labs Inc. By using DIFF, you agree to use it resp
 
 ## GitHub Access
 
-DIFF reads repository and pull request data from GitHub. If you sign in, DIFF may use your GitHub OAuth provider token to publish comments, inline review comments, review decisions, and Code view file commits only when you request those actions in the interface.
+DIFF reads repository and PR data from GitHub. If you sign in, DIFF may use your GitHub OAuth provider token to publish comments, reviews, Code view commits, branches, PRs, PR metadata, and labels only when you request them in the interface.
 
 You are responsible for any GitHub actions you submit through DIFF.
 

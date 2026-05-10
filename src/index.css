@@ -84,6 +84,53 @@
     overflow-wrap: anywhere;
   }
 
+  .code-view-highlight .token.comment,
+  .code-view-highlight .token.prolog,
+  .code-view-highlight .token.doctype,
+  .code-view-highlight .token.cdata {
+    color: rgba(255, 255, 255, 0.24);
+  }
+
+  .code-view-highlight .token.punctuation,
+  .code-view-highlight .token.operator {
+    color: rgba(255, 255, 255, 0.38);
+  }
+
+  .code-view-highlight .token.property,
+  .code-view-highlight .token.tag,
+  .code-view-highlight .token.boolean,
+  .code-view-highlight .token.number,
+  .code-view-highlight .token.constant,
+  .code-view-highlight .token.symbol {
+    color: rgba(255, 122, 64, 0.72);
+  }
+
+  .code-view-highlight .token.selector,
+  .code-view-highlight .token.attr-name,
+  .code-view-highlight .token.string,
+  .code-view-highlight .token.char,
+  .code-view-highlight .token.builtin,
+  .code-view-highlight .token.inserted {
+    color: rgba(104, 211, 145, 0.62);
+  }
+
+  .code-view-highlight .token.atrule,
+  .code-view-highlight .token.attr-value,
+  .code-view-highlight .token.keyword {
+    color: rgba(125, 181, 255, 0.68);
+  }
+
+  .code-view-highlight .token.function,
+  .code-view-highlight .token.class-name {
+    color: rgba(255, 214, 120, 0.7);
+  }
+
+  .code-view-highlight .token.regex,
+  .code-view-highlight .token.important,
+  .code-view-highlight .token.variable {
+    color: rgba(238, 139, 248, 0.62);
+  }
+
   @media (max-width: 639px) {
     .markdown-body :where(ul, ol) {
       padding-left: 1rem;

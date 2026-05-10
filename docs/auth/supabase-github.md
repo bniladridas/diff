@@ -2,7 +2,7 @@
 
 # Supabase GitHub Auth
 
-DIFF uses Supabase Auth for app identity and a GitHub OAuth App for GitHub-backed sign-in. Signed-in users can sync preferences, save review state, publish review actions, and commit Code view file edits.
+DIFF uses Supabase Auth for app identity and a GitHub OAuth App for GitHub sign-in. Signed-in users can sync preferences, save review state, publish reviews, commit Code view edits, create branches, open PRs, and update PR metadata.
 
 For local development, set the frontend environment variables in `.env`:
 

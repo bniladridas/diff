@@ -4,6 +4,7 @@ Last updated: 2026-05-10
 
 Release line:
 
+- `v0.5.0` Code Branches
 - `v0.4.0` Live Code Workspace
 - `v0.3.5` Sign-In Trust Update
 - `v0.3.4` Sign-In & Check Polish
@@ -26,9 +27,9 @@ Keep update and release-note copy calm, compact, and non-pushy. Prefer maintenan
 
 `VERSION` and `package.json` must match for each release.
 
-Release tags use `v`-prefixed SemVer. Example: tag `v0.4.0`, version `0.4.0`.
+Release tags use `v`-prefixed SemVer. Example: tag `v0.5.0`, version `0.5.0`.
 
-Each stable tag needs a matching release branch at the same commit. Example: `release/0.4.0` points at `v0.4.0`.
+Each stable tag needs a matching release branch at the same commit. Example: `release/0.5.0` points at `v0.5.0`.
 
 When bumping a release, update all version-bearing release files together:
 
@@ -52,7 +53,7 @@ Per-user app state syncs through `public.user_preferences`. Related migrations:
 - `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`
 - `supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql`
 
-GitHub writes use the Supabase GitHub provider token with `repo read:user user:email` scopes. The write path covers PR discussion comments, inline review comments, review submission, and single-file Code view commits.
+GitHub writes use the Supabase GitHub provider token with `repo read:user user:email` scopes. The write path covers comments, reviews, Code view commits, branch creation, PR creation, PR metadata edits, and labels.
 
 The browser verifier runs anonymous coverage without a seeded session. For authenticated checks, use `window.__DIFF_E2E__.writeSessionFile()` in dev mode, then run with `DIFF_E2E_SESSION_FILE=/tmp/diff-session.json`. `DIFF_E2E_SESSION_JSON` remains available when a file cannot be used.
 
@@ -64,9 +65,9 @@ If a seeded e2e run skips `signed-out-fallback`, that is expected. Snapshot seed
 
 Live pull refresh uses `/api/live` WebSockets on a long-running Node server. Serverless deployments fall back to timed HTTP refresh. `npm run check:app` includes a local `live-channel` assertion.
 
-Code view uses `/api/repo/tree` and `/api/repo/content`. Signed-in file commits use `PUT /api/repo/content` with the current file SHA and an explicit commit message. `npm run check:app` covers these routes.
+Code view uses `/api/repo/tree` and `/api/repo/content`. Signed-in file commits use `PUT /api/repo/content` with the current file SHA and an explicit commit message. Branch and PR flows use `/api/repo/branch`, `/api/pulls`, `/api/pulls/:number`, and `/api/pulls/:number/labels`. `npm run check:app` covers these routes.
 
-The previous planned items are now part of `v0.4.0`.
+The previous planned items are now part of `v0.5.0`.
 
 The strongest local verification sequence before release is:
 

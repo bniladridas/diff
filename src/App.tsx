@@ -9,6 +9,7 @@ import {
   useCallback,
   useState,
   useEffect,
+  useMemo,
   useRef,
   type AnchorHTMLAttributes,
   type ReactNode,
@@ -59,6 +60,28 @@ import {
   Bookmark,
   Trash2,
 } from "lucide-react";
+import Prism from "prismjs";
+import "prismjs/components/prism-bash";
+import "prismjs/components/prism-c";
+import "prismjs/components/prism-cpp";
+import "prismjs/components/prism-csharp";
+import "prismjs/components/prism-docker";
+import "prismjs/components/prism-go";
+import "prismjs/components/prism-graphql";
+import "prismjs/components/prism-ini";
+import "prismjs/components/prism-java";
+import "prismjs/components/prism-json";
+import "prismjs/components/prism-jsx";
+import "prismjs/components/prism-markdown";
+import "prismjs/components/prism-python";
+import "prismjs/components/prism-ruby";
+import "prismjs/components/prism-rust";
+import "prismjs/components/prism-scss";
+import "prismjs/components/prism-sql";
+import "prismjs/components/prism-toml";
+import "prismjs/components/prism-tsx";
+import "prismjs/components/prism-typescript";
+import "prismjs/components/prism-yaml";
 import { cn } from "./lib/utils";
 import {
   fetchUserPreferences,
@@ -119,6 +142,10 @@ interface PullRequest {
   html_url: string;
   state: string;
   draft?: boolean;
+  labels?: Array<{
+    name: string;
+    color?: string;
+  }>;
   base?: {
     ref: string;
   };
@@ -841,6 +868,67 @@ const getFileKindLabel = (path: string) => {
   return ext || "file";
 };
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const getPrismLanguage = (path: string) => {
+  const normalizedPath = path.toLowerCase();
+  const fileName = normalizedPath.split("/").pop() ?? "";
+  const ext = fileName.includes(".") ? fileName.split(".").pop() ?? "" : "";
+
+  if (fileName === "dockerfile" || fileName.startsWith("dockerfile.")) return "docker";
+  if (fileName === ".env" || fileName.endsWith(".env")) return "ini";
+  if (["html", "htm", "xml", "svg"].includes(ext)) return "markup";
+  if (["css", "scss", "sass", "less", "pcss"].includes(ext)) return "css";
+  if (["js", "mjs", "cjs"].includes(ext)) return "javascript";
+  if (ext === "jsx") return "jsx";
+  if (ext === "ts") return "typescript";
+  if (ext === "tsx") return "tsx";
+  if (["json", "jsonc", "json5"].includes(ext)) return "json";
+  if (["yml", "yaml"].includes(ext)) return "yaml";
+  if (ext === "toml") return "toml";
+  if (["ini", "conf", "cfg"].includes(ext)) return "ini";
+  if (["sh", "bash", "zsh", "fish"].includes(ext)) return "bash";
+  if (ext === "py") return "python";
+  if (ext === "rb") return "ruby";
+  if (ext === "rs") return "rust";
+  if (ext === "go") return "go";
+  if (["c", "h"].includes(ext)) return "c";
+  if (["cc", "cpp", "cxx", "hh", "hpp", "hxx"].includes(ext)) return "cpp";
+  if (ext === "cs") return "csharp";
+  if (ext === "java") return "java";
+  if (["sql", "psql", "mysql", "sqlite"].includes(ext)) return "sql";
+  if (["md", "mdx"].includes(ext)) return "markdown";
+  if (["graphql", "gql"].includes(ext)) return "graphql";
+
+  if (
+    [
+      "package.json",
+      "package-lock.json",
+      "tsconfig.json",
+      "vite.config.ts",
+      "eslint.config.js",
+      "tailwind.config.js",
+    ].includes(fileName)
+  ) {
+    return fileName.endsWith(".json") ? "json" : "javascript";
+  }
+
+  return null;
+};
+
+const highlightCode = (code: string, path: string) => {
+  const language = getPrismLanguage(path);
+  const grammar = language ? Prism.languages[language] : null;
+  if (!language || !grammar) return escapeHtml(code);
+  return Prism.highlight(code, grammar, language);
+};
+
 export default function App() {
   const [viewMode, setViewMode] = useState<"pulls" | "branches" | "code">("pulls");
   const [defaultRepo, setDefaultRepo] = useState(readStoredDefaultRepo);
@@ -858,6 +946,13 @@ export default function App() {
   const [repoFileDraft, setRepoFileDraft] = useState("");
   const [isEditingRepoFile, setIsEditingRepoFile] = useState(false);
   const [repoCommitMessage, setRepoCommitMessage] = useState("");
+  const [repoTargetBranch, setRepoTargetBranch] = useState("");
+  const [repoNewBranchName, setRepoNewBranchName] = useState("");
+  const [repoPullTitle, setRepoPullTitle] = useState("");
+  const [repoPullBody, setRepoPullBody] = useState("");
+  const [repoPullUrl, setRepoPullUrl] = useState<string | null>(null);
+  const [creatingRepoBranch, setCreatingRepoBranch] = useState(false);
+  const [creatingRepoPull, setCreatingRepoPull] = useState(false);
   const [committingRepoFile, setCommittingRepoFile] = useState(false);
   const [loadingRepoTree, setLoadingRepoTree] = useState(false);
   const [loadingRepoFile, setLoadingRepoFile] = useState(false);
@@ -928,6 +1023,11 @@ export default function App() {
   const [newReviewBody, setNewReviewBody] = useState("");
   const [submittingReview, setSubmittingReview] = useState<"COMMENT" | "APPROVE" | "REQUEST_CHANGES" | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const [isEditingPullMeta, setIsEditingPullMeta] = useState(false);
+  const [pullTitleDraft, setPullTitleDraft] = useState("");
+  const [pullBodyDraft, setPullBodyDraft] = useState("");
+  const [pullLabelsDraft, setPullLabelsDraft] = useState("");
+  const [savingPullMeta, setSavingPullMeta] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [captchaInput, setCaptchaInput] = useState("");
@@ -986,6 +1086,10 @@ export default function App() {
         .filter((result) => result.scope === "repo" && result.repoItem)
         .map((result) => result.repoItem!)
     : repoFiles.slice(0, 250);
+  const highlightedRepoFileContent = useMemo(() => {
+    if (repoFileContent == null || !selectedRepoFile) return null;
+    return highlightCode(repoFileContent, selectedRepoFile.path);
+  }, [repoFileContent, selectedRepoFile?.path]);
   const releasedUpdates = APP_UPDATES.filter((update) => update.category !== "planned");
   const plannedUpdates = APP_UPDATES.filter((update) => update.category === "planned");
   const checkStats = checkRuns.reduce(
@@ -1026,6 +1130,12 @@ export default function App() {
           pull.pull_number === selectedPull.number,
       )
     : false;
+  const selectedPullLabels = selectedPull?.labels ?? [];
+  const parsedPullLabelsDraft = pullLabelsDraft
+    .split(",")
+    .map((label) => label.trim())
+    .filter(Boolean);
+  const activeRepoRef = repoTargetBranch.trim() || repoInfo?.default_branch || "HEAD";
   const availableReviewLines = Array.from(
     new Set(
       diffRows
@@ -1448,6 +1558,64 @@ export default function App() {
       throw new Error(message);
     } finally {
       setSubmittingReview(null);
+    }
+  };
+
+  const savePullMetadata = async () => {
+    if (!selectedPull) return;
+    const title = pullTitleDraft.trim();
+
+    if (!title) {
+      setWriteError("Pull request title is required.");
+      return;
+    }
+
+    setSavingPullMeta(true);
+    setWriteError(null);
+
+    try {
+      const [pullResponse, labelsResponse] = await Promise.all([
+        fetch(`/api/pulls/${selectedPull.number}?owner=${currentOwner}&repo=${currentRepo}`, {
+          method: "PATCH",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            title,
+            body: pullBodyDraft,
+          }),
+        }),
+        fetch(`/api/pulls/${selectedPull.number}/labels?owner=${currentOwner}&repo=${currentRepo}`, {
+          method: "PUT",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            labels: parsedPullLabelsDraft,
+          }),
+        }),
+      ]);
+
+      const pullData = await pullResponse.json().catch(() => ({}));
+      if (!pullResponse.ok) {
+        throw new Error(pullData.error || `Pull update failed with ${pullResponse.status}`);
+      }
+
+      const labelsData = await labelsResponse.json().catch(() => ([]));
+      if (!labelsResponse.ok) {
+        throw new Error(labelsData.error || `Label update failed with ${labelsResponse.status}`);
+      }
+
+      const nextPull = {
+        ...pullData,
+        labels: Array.isArray(labelsData) ? labelsData : pullData.labels,
+      } as PullRequest;
+      setSelectedPull(nextPull);
+      setPulls((current) =>
+        current.map((pull) => (pull.number === nextPull.number ? nextPull : pull)),
+      );
+      setIsEditingPullMeta(false);
+      await refreshReviewData(selectedPull.number);
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : "Failed to update pull request.");
+    } finally {
+      setSavingPullMeta(false);
     }
   };
 
@@ -2242,6 +2410,13 @@ export default function App() {
   }, [currentOwner, currentRepo]);
 
   useEffect(() => {
+    setIsEditingPullMeta(false);
+    setPullTitleDraft(selectedPull?.title ?? "");
+    setPullBodyDraft(selectedPull?.body ?? "");
+    setPullLabelsDraft((selectedPull?.labels ?? []).map((label) => label.name).join(", "));
+  }, [selectedPull?.id, selectedPull?.title, selectedPull?.body, selectedPull?.labels]);
+
+  useEffect(() => {
     if (!authUser) return;
     trackRecentRepo(currentOwner, currentRepo);
   }, [authUser?.id, currentOwner, currentRepo]);
@@ -2314,6 +2489,11 @@ export default function App() {
     setRepoFileDraft("");
     setIsEditingRepoFile(false);
     setRepoCommitMessage("");
+    setRepoTargetBranch("");
+    setRepoNewBranchName("");
+    setRepoPullTitle("");
+    setRepoPullBody("");
+    setRepoPullUrl(null);
     setRepoSearchQuery("");
     setPulls([]);
     setSelectedPull(null);
@@ -2495,7 +2675,7 @@ export default function App() {
         }
       },
       getCodeFile: async (filePath) => {
-        const branch = repoInfo?.default_branch ?? "HEAD";
+        const branch = activeRepoRef;
         const treeResponse = await fetch(
           `/api/repo/tree?owner=${currentOwner}&repo=${currentRepo}&ref=${encodeURIComponent(branch)}`,
           { headers: getReadHeaders() },
@@ -2528,7 +2708,7 @@ export default function App() {
       commitCodeFile: async (filePath, content, message) => {
         setWriteError(null);
         setAuthError(null);
-        const branch = repoInfo?.default_branch ?? "HEAD";
+        const branch = activeRepoRef;
         const currentFile = await window.__DIFF_E2E__!.getCodeFile(filePath);
         const response = await fetch(
           `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}`,
@@ -2605,6 +2785,7 @@ export default function App() {
     showUpdates,
     theme,
     availableReviewLines,
+    activeRepoRef,
     writeError,
   ]);
 
@@ -2742,7 +2923,7 @@ export default function App() {
 
     try {
       const comparisonRepoInfo = repoInfo ?? (await fetchRepoInfo());
-      const ref = comparisonRepoInfo?.default_branch ?? "HEAD";
+      const ref = repoTargetBranch.trim() || comparisonRepoInfo?.default_branch || "HEAD";
       const response = await fetch(
         `/api/repo/tree?owner=${currentOwner}&repo=${currentRepo}&ref=${encodeURIComponent(ref)}`,
         { headers: getReadHeaders() },
@@ -2784,7 +2965,7 @@ export default function App() {
 
   const loadRepoFile = async (
     file: RepoTreeItem,
-    ref = repoInfo?.default_branch ?? "HEAD",
+    ref = activeRepoRef,
     requestKey = `${currentOwner}/${currentRepo}`,
   ) => {
     setSelectedRepoFile(file);
@@ -2820,10 +3001,75 @@ export default function App() {
     }
   };
 
+  const createRepoBranch = async () => {
+    const base = repoInfo?.default_branch;
+    const name = repoNewBranchName.trim();
+
+    if (!base) {
+      setWriteError("Base branch is unavailable.");
+      return;
+    }
+
+    if (!name) {
+      setWriteError("Branch name is required.");
+      return;
+    }
+
+    setCreatingRepoBranch(true);
+    setWriteError(null);
+    setRepoPullUrl(null);
+
+    try {
+      const response = await fetch(
+        `/api/repo/branch?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "POST",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({ name, from: base }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Server responded with ${response.status}`);
+      }
+
+      setRepoTargetBranch(name);
+      setRepoPullTitle((current) => current || `Update ${selectedRepoFile?.path ?? currentRepo}`);
+      setRepoPullBody((current) => current || "Created from DIFF Code view.");
+      if (selectedRepoFile) {
+        await loadRepoFile(selectedRepoFile, name);
+      }
+    } catch (err) {
+      setWriteError(err instanceof Error ? err.message : "Failed to create branch.");
+    } finally {
+      setCreatingRepoBranch(false);
+    }
+  };
+
+  const getRepoFileSha = async (filePath: string, ref: string) => {
+    const response = await fetch(
+      `/api/repo/tree?owner=${currentOwner}&repo=${currentRepo}&ref=${encodeURIComponent(ref)}`,
+      { headers: getReadHeaders() },
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to read target branch tree.");
+    }
+    const data = await response.json();
+    const item = Array.isArray(data.tree)
+      ? data.tree.find((entry: RepoTreeItem) => entry.path === filePath && entry.type === "blob")
+      : null;
+    if (!item?.sha) {
+      throw new Error(`File ${filePath} is not available on ${ref}.`);
+    }
+    return item.sha;
+  };
+
   const commitRepoFile = async () => {
     if (!selectedRepoFile || repoFileContent == null) return;
     const message = repoCommitMessage.trim();
-    const branch = repoInfo?.default_branch;
+    const branch = repoTargetBranch.trim() || repoInfo?.default_branch;
 
     if (!message) {
       setWriteError("Commit message is required.");
@@ -2844,6 +3090,7 @@ export default function App() {
     setWriteError(null);
 
     try {
+      const currentSha = await getRepoFileSha(selectedRepoFile.path, branch);
       const response = await fetch(
         `/api/repo/content?owner=${currentOwner}&repo=${currentRepo}`,
         {
@@ -2854,7 +3101,7 @@ export default function App() {
             content: repoFileDraft,
             message,
             branch,
-            sha: selectedRepoFile.sha,
+            sha: currentSha,
           }),
         },
       );
@@ -2879,10 +3126,65 @@ export default function App() {
       setRepoFileContent(repoFileDraft);
       setIsEditingRepoFile(false);
       setRepoCommitMessage(`Update ${selectedRepoFile.path}`);
+      if (branch !== repoInfo?.default_branch) {
+        setRepoPullTitle((current) => current || message);
+      }
     } catch (err) {
       setWriteError(err instanceof Error ? err.message : "Failed to commit file.");
     } finally {
       setCommittingRepoFile(false);
+    }
+  };
+
+  const createRepoPullRequest = async () => {
+    const base = repoInfo?.default_branch;
+    const head = repoTargetBranch.trim();
+    const title = repoPullTitle.trim();
+
+    if (!base) {
+      setWriteError("Base branch is unavailable.");
+      return;
+    }
+
+    if (!head || head === base) {
+      setWriteError("Create or select a working branch before opening a pull request.");
+      return;
+    }
+
+    if (!title) {
+      setWriteError("Pull request title is required.");
+      return;
+    }
+
+    setCreatingRepoPull(true);
+    setWriteError(null);
+    setRepoPullUrl(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "POST",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            title,
+            body: repoPullBody,
+            head,
+            base,
+          }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Server responded with ${response.status}`);
+      }
+
+      setRepoPullUrl(typeof data.html_url === "string" ? data.html_url : null);
+    } catch (err) {
+      setWriteError(err instanceof Error ? err.message : "Failed to open pull request.");
+    } finally {
+      setCreatingRepoPull(false);
     }
   };
 
@@ -4661,12 +4963,18 @@ export default function App() {
                                   className="min-h-[520px] w-full resize-none bg-onyx/40 p-4 font-mono text-[10px] leading-relaxed text-white/70 outline-none sm:p-6 sm:text-xs lg:p-8"
                                 />
                               ) : (
-                                <pre className="w-fit min-w-full whitespace-pre p-4 text-[10px] leading-relaxed text-white/60 !m-0 !bg-onyx/40 sm:p-6 sm:text-xs lg:p-8">
-                                  {repoFileContent ??
-                                    (selectedRepoFile
-                                      ? "File content unavailable."
-                                      : "Select a repository file to inspect its content.")}
-                                </pre>
+                                <pre
+                                  className="code-view-highlight w-fit min-w-full whitespace-pre p-4 text-[10px] leading-relaxed text-white/60 !m-0 !bg-onyx/40 sm:p-6 sm:text-xs lg:p-8"
+                                  dangerouslySetInnerHTML={{
+                                    __html:
+                                      highlightedRepoFileContent ??
+                                      escapeHtml(
+                                        selectedRepoFile
+                                          ? "File content unavailable."
+                                          : "Select a repository file to inspect its content.",
+                                      ),
+                                  }}
+                                />
                               )}
                             </div>
                           )}
@@ -4685,12 +4993,62 @@ export default function App() {
                                 disabled={committingRepoFile || !repoCommitMessage.trim() || repoFileDraft === repoFileContent}
                                 className="rounded-lg border border-brand-orange/25 bg-brand-orange/10 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange transition-colors hover:bg-brand-orange/15 disabled:cursor-not-allowed disabled:opacity-35"
                               >
-                                {committingRepoFile ? "Committing" : `Commit to ${repoInfo?.default_branch ?? "branch"}`}
+                                {committingRepoFile ? "Committing" : `Commit to ${activeRepoRef}`}
                               </button>
                             </div>
                             <p className="text-[9px] uppercase tracking-[0.16em] text-white/20">
-                              Commits use your signed-in GitHub account.
+                              Commits use your signed-in GitHub account. Target: {repoTargetBranch || repoInfo?.default_branch || "branch"}.
                             </p>
+                            <div className="grid gap-3 border-t border-white/[0.04] pt-3 lg:grid-cols-[1fr_auto]">
+                              <input
+                                value={repoNewBranchName}
+                                onChange={(event) => setRepoNewBranchName(event.target.value)}
+                                placeholder="new branch name"
+                                className="min-w-0 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                              />
+                              <button
+                                onClick={createRepoBranch}
+                                disabled={creatingRepoBranch || !repoNewBranchName.trim()}
+                                className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/35 transition-colors hover:bg-white/[0.04] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-30"
+                              >
+                                {creatingRepoBranch ? "Creating" : "Create Branch"}
+                              </button>
+                            </div>
+                            {(repoTargetBranch && repoTargetBranch !== repoInfo?.default_branch) && (
+                              <div className="space-y-3 border-t border-white/[0.04] pt-3">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <input
+                                    value={repoPullTitle}
+                                    onChange={(event) => setRepoPullTitle(event.target.value)}
+                                    placeholder="Pull request title"
+                                    className="min-w-0 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                                  />
+                                  <button
+                                    onClick={createRepoPullRequest}
+                                    disabled={creatingRepoPull || !repoPullTitle.trim()}
+                                    className="rounded-lg border border-brand-orange/20 bg-brand-orange/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange/80 transition-colors hover:bg-brand-orange/10 disabled:cursor-not-allowed disabled:opacity-35"
+                                  >
+                                    {creatingRepoPull ? "Opening" : "Open PR"}
+                                  </button>
+                                </div>
+                                <textarea
+                                  value={repoPullBody}
+                                  onChange={(event) => setRepoPullBody(event.target.value)}
+                                  placeholder="Pull request body"
+                                  className="min-h-20 w-full resize-y rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono leading-relaxed text-white/60 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                                />
+                                {repoPullUrl && (
+                                  <a
+                                    href={repoPullUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-brand-orange/70 transition-colors hover:text-brand-orange"
+                                  >
+                                    View pull request <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -5044,15 +5402,80 @@ export default function App() {
 
                       {/* PR Description */}
                       <section className="space-y-6">
-                        <div className="markdown-body prose prose-invert prose-orange max-w-none min-w-0 overflow-hidden border-l border-white/5 pl-4 sm:pl-8 py-2">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[rehypeRaw, rehypeSanitize]}
-                            components={markdownComponents}
-                          >
-                            {selectedPull.body || "_No description provided._"}
-                          </ReactMarkdown>
-                        </div>
+                        {selectedPull && authUser && (
+                          <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-4">
+                            <div className="flex flex-wrap gap-2">
+                              {selectedPullLabels.length > 0 ? (
+                                selectedPullLabels.map((label) => (
+                                  <span
+                                    key={label.name}
+                                    className="rounded-full border border-white/8 bg-white/[0.025] px-2 py-1 text-[9px] font-medium text-white/35"
+                                  >
+                                    {label.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[9px] uppercase tracking-[0.16em] text-white/16">
+                                  No labels
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => {
+                                setWriteError(null);
+                                setIsEditingPullMeta((current) => !current);
+                              }}
+                              className="shrink-0 text-[9px] uppercase tracking-widest text-white/22 transition-colors hover:text-white/55"
+                            >
+                              {isEditingPullMeta ? "Close" : "Edit PR"}
+                            </button>
+                          </div>
+                        )}
+
+                        {isEditingPullMeta && selectedPull ? (
+                          <div className="space-y-3 rounded-xl border border-white/5 bg-white/[0.012] p-4">
+                            <input
+                              value={pullTitleDraft}
+                              onChange={(event) => setPullTitleDraft(event.target.value)}
+                              placeholder="Pull request title"
+                              className="w-full rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-sm text-white/75 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                            />
+                            <textarea
+                              value={pullBodyDraft}
+                              onChange={(event) => setPullBodyDraft(event.target.value)}
+                              placeholder="Pull request body"
+                              className="min-h-[180px] w-full resize-y rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-sm leading-relaxed text-white/70 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                            />
+                            <input
+                              value={pullLabelsDraft}
+                              onChange={(event) => setPullLabelsDraft(event.target.value)}
+                              placeholder="Labels, comma separated"
+                              className="w-full rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                            />
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-[9px] uppercase tracking-[0.16em] text-white/20">
+                                Labels must already exist in GitHub.
+                              </p>
+                              <button
+                                onClick={savePullMetadata}
+                                disabled={savingPullMeta || !pullTitleDraft.trim()}
+                                className="rounded-lg border border-brand-orange/25 bg-brand-orange/10 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange transition-colors hover:bg-brand-orange/15 disabled:cursor-not-allowed disabled:opacity-35"
+                              >
+                                {savingPullMeta ? "Saving" : "Save PR"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="markdown-body prose prose-invert prose-orange max-w-none min-w-0 overflow-hidden border-l border-white/5 pl-4 sm:pl-8 py-2">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                              components={markdownComponents}
+                            >
+                              {selectedPull.body || "_No description provided._"}
+                            </ReactMarkdown>
+                          </div>
+                        )}
                       </section>
 
                       {selectedPull && authUser && (
@@ -5832,11 +6255,11 @@ export default function App() {
 
               <div className="flex-1 space-y-3 overflow-y-auto px-5 py-5 sm:px-6 custom-scrollbar">
                 <p className="text-[13px] leading-relaxed text-white/50">
-                  DIFF by Coccinella Labs uses GitHub sign-in to read pull requests, sync preferences, and publish comments, reviews, or file commits only when you choose.
+                  DIFF uses GitHub sign-in to read PRs, sync preferences, and make chosen GitHub writes.
                 </p>
 
                 <p className="text-[11px] leading-relaxed text-white/30">
-                  GitHub writes are made from your account only after you choose them.
+                  Writes include comments, reviews, commits, branches, PRs, and labels.
                 </p>
 
                 <div className="flex flex-wrap gap-4 pt-1 text-[9px] font-medium uppercase tracking-[0.16em]">

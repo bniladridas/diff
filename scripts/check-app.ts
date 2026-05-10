@@ -471,6 +471,38 @@ async function main() {
       [401, 503],
       1800,
     );
+
+    await timedJsonCheck(
+      "repo-branch-write-auth",
+      `${BASE_URL}/api/repo/branch?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "diff/check-branch-auth",
+          from: repoInfo?.default_branch ?? "HEAD",
+        }),
+      },
+      [401, 503],
+      1800,
+    );
+
+    await timedJsonCheck(
+      "pull-create-auth",
+      `${BASE_URL}/api/pulls?owner=${DEFAULT_OWNER}&repo=${DEFAULT_REPO}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "check pull auth",
+          head: "diff/check-branch-auth",
+          base: repoInfo?.default_branch ?? "HEAD",
+          body: "",
+        }),
+      },
+      [401, 503],
+      1800,
+    );
   }
 
   const pulls = await timedJsonCheck<PullRequestSummary[]>(
@@ -503,6 +535,33 @@ async function main() {
     const pullBase = `${BASE_URL}/api/pulls/${firstPull.number}`;
     const compareBase = firstPull.base?.ref || repoInfo?.default_branch;
     const compareHead = firstPull.head?.ref;
+
+    await timedJsonCheck(
+      "pull-update-auth",
+      `${pullBase}?owner=${owner}&repo=${repo}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: firstPull.title || "check pull auth",
+          body: "",
+        }),
+      },
+      [401, 503],
+      1800,
+    );
+
+    await timedJsonCheck(
+      "pull-labels-auth",
+      `${pullBase}/labels?owner=${owner}&repo=${repo}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labels: [] }),
+      },
+      [401, 503],
+      1800,
+    );
 
     const [
       diffText,
