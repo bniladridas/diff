@@ -8,6 +8,17 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.6.2",
+    title: "Icon Polish",
+    description: "Action icons feel quieter and more consistent.",
+    category: "fix",
+    details: [
+      "Use softer hover motion on panel and check actions",
+      "Keep repo switching distinct from refresh",
+      "Keep brand and status icons calm"
+    ]
+  },
+  {
     version: "0.6.1",
     title: "Pull Stream Fixes",
     description: "Pull lists stay steadier while switching and selecting.",
@@ -201,7 +212,7 @@ export const APP_UPDATES: AppUpdate[] = [
     description: "Notes for the next pass.",
     category: "planned",
     details: [
-      "Watch day-to-day review flow",
+      "Watch daily review flow",
       "Keep release notes compact"
     ]
   },

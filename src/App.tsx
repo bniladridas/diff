@@ -46,6 +46,7 @@ import {
   User,
   CheckCircle,
   ArrowRight,
+  ArrowLeftRight,
   Box,
   Palette,
   Settings,
@@ -3994,20 +3995,20 @@ export default function App() {
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               aria-label={isSidebarOpen ? "Close navigation panel" : "Open navigation panel"}
-              className="group lg:hidden p-1 -ml-1 text-white/40 hover:text-brand-orange transition-colors"
+              className="group -ml-1 p-1 text-white/40 transition-colors hover:text-white/55 lg:hidden"
             >
               <Activity
                 className={cn(
-                  "w-4 h-4 sm:w-5 h-5 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]",
+                  "h-4 w-4 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04] sm:h-5 sm:w-5",
                   isSidebarOpen && "rotate-90",
                 )}
               />
             </button>
-            <div className="flex items-center gap-2 lg:gap-3 min-w-0">
+            <div className="group/brand flex min-w-0 items-center gap-2 lg:gap-3">
               <img
                 src={COCCINELLA_LOGO_URL}
                 alt=""
-                className="h-4 w-4 shrink-0 rounded-sm object-contain opacity-70"
+                className="h-4 w-4 shrink-0 rounded-sm object-contain opacity-60 transition-transform duration-300 ease-out group-hover/brand:-translate-y-px group-hover/brand:scale-[1.03]"
               />
               <div className="flex flex-col min-w-0">
                 <h1 className="text-base lg:text-xl font-mono tracking-tighter leading-none group cursor-default flex items-baseline">
@@ -4246,11 +4247,11 @@ export default function App() {
             <Tooltip content={isSidebarHidden ? "Show panel" : "Hide panel"}>
             <button
               onClick={() => setIsSidebarHidden(!isSidebarHidden)}
-              className="group hidden h-9 w-9 items-center justify-center rounded-lg border border-white/[0.04] bg-white/[0.012] text-white/25 transition-colors hover:border-white/[0.08] hover:bg-white/[0.025] hover:text-brand-orange/72 lg:flex"
+              className="group hidden h-9 w-9 items-center justify-center rounded-lg border border-white/[0.04] bg-white/[0.012] text-white/25 transition-colors hover:border-white/[0.08] hover:bg-white/[0.025] hover:text-white/55 lg:flex"
             >
               <ChevronRight
                 className={cn(
-                  "h-4 w-4 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]",
+                  "h-4 w-4 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:translate-x-px group-hover:scale-[1.04]",
                   isSidebarHidden ? "rotate-0" : "rotate-180",
                 )}
               />
@@ -4369,7 +4370,7 @@ export default function App() {
                       <span className="truncate">
                         {currentOwner}/{currentRepo}
                       </span>
-                      <RefreshCw className="w-2.5 h-2.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <ArrowLeftRight className="ml-1 h-2.5 w-2.5 text-white/25 opacity-0 transition-all duration-300 ease-out group-hover:-translate-y-px group-hover:translate-x-px group-hover:scale-[1.04] group-hover:text-white/55 group-hover:opacity-100" />
                     </button>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {(currentOwner !== defaultRepo.owner ||
@@ -4419,7 +4420,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsSidebarAccountOpen((current) => !current)}
-                    className="flex w-full items-center justify-between text-left"
+                    className="group flex w-full items-center justify-between text-left"
                     aria-expanded={isSidebarAccountOpen}
                   >
                     <div className="text-[8px] uppercase tracking-[0.24em] text-white/20">
@@ -4427,7 +4428,7 @@ export default function App() {
                     </div>
                     <ChevronRight
                       className={cn(
-                        "h-3.5 w-3.5 text-white/20 transition-transform",
+                        "h-3.5 w-3.5 text-white/20 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04] group-hover:text-white/45",
                         isSidebarAccountOpen && "rotate-90",
                       )}
                     />
@@ -4488,7 +4489,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsSidebarRecentReposOpen((current) => !current)}
-                    className="flex w-full items-center justify-between text-left"
+                    className="group flex w-full items-center justify-between text-left"
                     aria-expanded={isSidebarRecentReposOpen}
                   >
                     <div className="text-[8px] uppercase tracking-[0.24em] text-white/20">
@@ -4496,7 +4497,7 @@ export default function App() {
                     </div>
                     <ChevronRight
                       className={cn(
-                        "h-3.5 w-3.5 text-white/20 transition-transform",
+                        "h-3.5 w-3.5 text-white/20 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04] group-hover:text-white/45",
                         isSidebarRecentReposOpen && "rotate-90",
                       )}
                     />
@@ -4531,7 +4532,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setIsSidebarSavedPullsOpen((current) => !current)}
-                    className="flex w-full items-center justify-between text-left"
+                    className="group flex w-full items-center justify-between text-left"
                     aria-expanded={isSidebarSavedPullsOpen}
                   >
                     <div className="text-[8px] uppercase tracking-[0.24em] text-white/20">
@@ -4539,7 +4540,7 @@ export default function App() {
                     </div>
                     <ChevronRight
                       className={cn(
-                        "h-3.5 w-3.5 text-white/20 transition-transform",
+                        "h-3.5 w-3.5 text-white/20 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04] group-hover:text-white/45",
                         isSidebarSavedPullsOpen && "rotate-90",
                       )}
                     />
@@ -4653,9 +4654,9 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => setIsSidebarOpen(false)}
-                    className="lg:hidden"
+                    className="group lg:hidden"
                   >
-                    <ChevronRight className="w-4 h-4 rotate-180 opacity-40" />
+                    <ChevronRight className="h-4 w-4 rotate-180 text-white/30 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04] group-hover:text-white/55" />
                   </button>
                 </div>
               </div>
@@ -4927,7 +4928,7 @@ export default function App() {
                           {loadingMore ? (
                             <RefreshCw className="w-4 h-4 animate-spin text-brand-orange" />
                           ) : (
-                            <ChevronRight className="w-4 h-4 rotate-90 text-white/40 group-hover:text-brand-orange" />
+                            <ChevronRight className="h-4 w-4 rotate-90 text-white/40 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04] group-hover:text-white/55" />
                           )}
                         </div>
                         <span className="text-[10px] font-bold uppercase tracking-[0.4em] opacity-40 group-hover:opacity-100 transition-opacity">
@@ -4967,11 +4968,11 @@ export default function App() {
                 e.stopPropagation();
                 setIsSidebarHidden(!isSidebarHidden);
               }}
-              className="w-7 h-14 rounded-full border border-white/10 bg-panel/95 backdrop-blur-sm flex items-center justify-center text-white/30 hover:text-white/70 hover:border-white/20 transition-all"
+              className="group flex h-14 w-7 items-center justify-center rounded-full border border-white/10 bg-panel/95 text-white/30 backdrop-blur-sm transition-colors hover:border-white/20 hover:text-white/60"
             >
               <ChevronRight
                 className={cn(
-                  "w-3.5 h-3.5 transition-transform",
+                  "h-3.5 w-3.5 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:translate-x-px group-hover:scale-[1.04]",
                   isSidebarHidden ? "rotate-0" : "rotate-180",
                 )}
               />
@@ -5035,7 +5036,7 @@ export default function App() {
                                 data-e2e="save-pull-toggle"
                                 onClick={toggleSavedPull}
                                 className={cn(
-                                  "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[8px] uppercase tracking-[0.18em] transition-colors",
+                                  "group flex items-center gap-1.5 rounded-md border px-2 py-1 text-[8px] uppercase tracking-[0.18em] transition-colors",
                                   selectedPullIsSaved
                                     ? "border-brand-orange/20 bg-brand-orange/[0.06] text-brand-orange/70"
                                     : "border-white/5 text-white/30 hover:border-white/10 hover:text-white/55",
@@ -5043,7 +5044,7 @@ export default function App() {
                               >
                                 <Bookmark
                                   className={cn(
-                                    "h-3 w-3",
+                                    "h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]",
                                     selectedPullIsSaved && "fill-current",
                                   )}
                                 />
@@ -5063,15 +5064,15 @@ export default function App() {
                               className="flex items-center gap-2 hover:bg-white/5 p-1 -m-1 transition-all rounded group"
                             >
                               {checkStats.failure > 0 ? (
-                                <XCircle className="w-5 h-5 text-rose-500" />
+                                <XCircle className="h-5 w-5 text-rose-500 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                               ) : checkStats.cancelled > 0 ? (
-                                <CircleSlash className="w-5 h-5 text-orange-500" />
+                                <CircleSlash className="h-5 w-5 text-orange-500 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                               ) : checkStats.pending > 0 ? (
-                                <RefreshCw className="w-5 h-5 text-amber-500 animate-spin" />
+                                <RefreshCw className="h-5 w-5 animate-spin text-amber-500 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                               ) : checkStats.success === checkRuns.length - checkStats.skipped ? (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                <CheckCircle2 className="h-5 w-5 text-emerald-500 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                               ) : (
-                                <Circle className="w-5 h-5 text-white/20" />
+                                <Circle className="h-5 w-5 text-white/20 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                               )}
 
                               <div className="flex flex-col text-left">
@@ -5307,15 +5308,15 @@ export default function App() {
                             )}
                             <button
                               onClick={() => setIsFullscreen(!isFullscreen)}
-                              className="text-[9px] uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity flex items-center gap-2 group"
+                              className="group flex items-center gap-2 text-[9px] uppercase tracking-widest text-white/20 transition-colors hover:text-white/55"
                             >
                               {isFullscreen ? (
                                 <>
-                                  Minimize <Minimize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                  Minimize <Minimize2 className="h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                                 </>
                               ) : (
                                 <>
-                                  Maximize <Maximize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                  Maximize <Maximize2 className="h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                                 </>
                               )}
                             </button>
@@ -5600,15 +5601,15 @@ export default function App() {
                             </div>
                             <button
                               onClick={() => setIsFullscreen(!isFullscreen)}
-                              className="text-[9px] uppercase tracking-widest opacity-20 hover:opacity-100 transition-opacity flex items-center gap-2 group"
+                              className="group flex items-center gap-2 text-[9px] uppercase tracking-widest text-white/20 transition-colors hover:text-white/55"
                             >
                               {isFullscreen ? (
                                 <>
-                                  Minimize <Minimize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                  Minimize <Minimize2 className="h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                                 </>
                               ) : (
                                 <>
-                                  Maximize <Maximize2 className="w-3 h-3 opacity-40 group-hover:opacity-100" />
+                                  Maximize <Maximize2 className="h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                                 </>
                               )}
                             </button>
@@ -5833,10 +5834,10 @@ export default function App() {
                             </div>
                             <button
                               onClick={() => setActiveTab("checks")}
-                              className="inline-flex items-center gap-2 self-start sm:self-auto text-[9px] font-medium uppercase tracking-[0.28em] text-white/20 transition-colors hover:text-brand-orange"
+                              className="group inline-flex items-center gap-2 self-start text-[9px] font-medium uppercase tracking-[0.28em] text-white/20 transition-colors hover:text-white/55 sm:self-auto"
                             >
                               Open Checks
-                              <ArrowRight className="w-3 h-3" />
+                              <ArrowRight className="h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:translate-x-px group-hover:scale-[1.04]" />
                             </button>
                           </div>
                         </section>
