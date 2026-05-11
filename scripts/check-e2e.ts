@@ -32,8 +32,12 @@ interface E2EState {
   recentReposCount: number;
   savedPullsCount: number;
   selectedPullNumber: number | null;
+  selectedFileName: string | null;
+  selectedRepoFilePath: string | null;
   loadedPullNumbers: number[];
   loadedFilesCount: number;
+  reviewDraftPath: string | null;
+  repoTargetBranch: string;
   loading: boolean;
   activeTab: "diff" | "discussion" | "checks" | "timeline";
   viewMode: "pulls" | "branches" | "code";
@@ -41,6 +45,22 @@ interface E2EState {
   showUpdates: boolean;
   authMenuOpen: boolean;
   githubWriteEnabled: boolean;
+}
+
+interface DraftFlickerSample {
+  selectedPath: string | null;
+  loading: boolean;
+  staleEditorVisible: boolean;
+  text: string;
+}
+
+declare global {
+  interface Window {
+    __DIFF_DRAFT_FLICKER__?: {
+      timer: number;
+      samples: DraftFlickerSample[];
+    };
+  }
 }
 
 type SessionSeed = {
@@ -77,6 +97,12 @@ const E2E_LIVE_REVIEW_EVENT =
   (process.env.DIFF_E2E_LIVE_REVIEW_EVENT as ReviewEvent | undefined) || null;
 const E2E_LIVE_CODE_COMMIT = process.env.DIFF_E2E_LIVE_CODE_COMMIT === "1";
 const E2E_LIVE_CODE_CREATE = process.env.DIFF_E2E_LIVE_CODE_CREATE === "1";
+const E2E_PR_ACTION_OWNER = process.env.DIFF_E2E_PR_ACTION_OWNER || "";
+const E2E_PR_ACTION_REPO = process.env.DIFF_E2E_PR_ACTION_REPO || "";
+const E2E_PR_ACTION_NUMBER = Number(process.env.DIFF_E2E_PR_ACTION_NUMBER || "");
+const E2E_PR_ACTION_EXPECT_FORK =
+  process.env.DIFF_E2E_PR_ACTION_EXPECT_FORK === "1";
+const E2E_LIVE_DRAFT_FIX = process.env.DIFF_E2E_LIVE_DRAFT_FIX === "1";
 const E2E_CODE_COMMIT_OWNER = process.env.DIFF_E2E_CODE_COMMIT_OWNER || ALT_REPO_OWNER;
 const E2E_CODE_COMMIT_REPO = process.env.DIFF_E2E_CODE_COMMIT_REPO || ALT_REPO_NAME;
 const E2E_CODE_COMMIT_PATH = process.env.DIFF_E2E_CODE_COMMIT_PATH || null;
@@ -744,6 +770,195 @@ async function verifyDesktopFlow(context: BrowserContext) {
     skip(
       "live-review",
       "set DIFF_E2E_LIVE_REVIEW_EVENT=COMMENT|APPROVE|REQUEST_CHANGES to verify review submission",
+    );
+  }
+
+  if (
+    E2E_PR_ACTION_OWNER &&
+    E2E_PR_ACTION_REPO &&
+    Number.isFinite(E2E_PR_ACTION_NUMBER) &&
+    E2E_PR_ACTION_NUMBER > 0
+  ) {
+    await bridge(page, "switchRepo", E2E_PR_ACTION_OWNER, E2E_PR_ACTION_REPO);
+    await waitForRepoView(page, E2E_PR_ACTION_OWNER, E2E_PR_ACTION_REPO, 20_000);
+    await bridge(page, "reloadPulls");
+    await waitForState(
+      page,
+      (current) =>
+        current.currentOwner === E2E_PR_ACTION_OWNER &&
+        current.currentRepo === E2E_PR_ACTION_REPO &&
+        !current.loading,
+      20_000,
+    );
+    await bridge(page, "selectPull", E2E_PR_ACTION_NUMBER);
+    await waitForState(
+      page,
+      (current) =>
+        current.selectedPullNumber === E2E_PR_ACTION_NUMBER &&
+        (!E2E_LIVE_DRAFT_FIX || Boolean(current.reviewDraftPath)) &&
+        !current.loading,
+      20_000,
+    );
+
+    await page.waitForFunction(
+      async () => {
+        const api = window.__DIFF_E2E__;
+        if (!api) return false;
+        const state = await api.getSelectedPullBranchActions();
+        return Boolean(state.headRepo) && (state.canWorkInCode || state.hasReviewDraftTarget);
+      },
+      undefined,
+      { timeout: 10_000 },
+    ).catch(() => undefined);
+
+    if (E2E_LIVE_DRAFT_FIX) {
+      await page.waitForFunction(
+        async () => {
+          const api = window.__DIFF_E2E__;
+          if (!api) return false;
+          const state = await api.getSelectedPullBranchActions();
+          return state.hasReviewDraftTarget;
+        },
+        undefined,
+        { timeout: 10_000 },
+      ).catch(() => undefined);
+    }
+
+    const actionState = await bridge<{
+      canWorkInCode: boolean;
+      hasReviewDraftTarget: boolean;
+      reviewDraftPath: string | null;
+      headRepo: string | null;
+      headRef: string | null;
+    }>(page, "getSelectedPullBranchActions");
+    const isForkPull = actionState.headRepo !== `${E2E_PR_ACTION_OWNER}/${E2E_PR_ACTION_REPO}`;
+
+    assertPass(
+      "pr-action-fork-state",
+      isForkPull === E2E_PR_ACTION_EXPECT_FORK,
+      `head repo ${actionState.headRepo ?? "unknown"}`,
+    );
+    assertPass(
+      "pr-action-code-availability",
+      E2E_PR_ACTION_EXPECT_FORK ? !actionState.canWorkInCode : actionState.canWorkInCode,
+      E2E_PR_ACTION_EXPECT_FORK
+        ? "fork PR code action blocked"
+        : "same-repo PR code action available",
+    );
+
+    try {
+      const openResult = await bridge<{ branch: string; path: string | null }>(
+        page,
+        "openSelectedPullBranchInCode",
+      );
+      await waitForState(
+        page,
+        (current) =>
+          current.viewMode === "code" &&
+          current.selectedPullNumber === E2E_PR_ACTION_NUMBER &&
+          current.repoTargetBranch === actionState.headRef &&
+          (!openResult.path || current.selectedRepoFilePath === openResult.path),
+        20_000,
+      );
+      assertPass(
+        "pr-action-open-code",
+        !E2E_PR_ACTION_EXPECT_FORK,
+        openResult.path
+          ? `selected PR branch opened ${openResult.path} in Code view`
+          : "selected PR branch opened in Code view",
+      );
+    } catch (error) {
+      assertPass(
+        "pr-action-open-code",
+        E2E_PR_ACTION_EXPECT_FORK,
+        error instanceof Error ? error.message : "selected PR branch could not open in Code",
+      );
+    }
+
+    if (actionState.hasReviewDraftTarget) {
+      try {
+        if (!E2E_LIVE_DRAFT_FIX && !E2E_PR_ACTION_EXPECT_FORK) {
+          skip(
+            "pr-action-draft-fix",
+            "set DIFF_E2E_LIVE_DRAFT_FIX=1 to call Gemini and prepare a real Draft Fix",
+          );
+        } else {
+          await page.evaluate((targetPath) => {
+            const samples: Array<{
+              selectedPath: string | null;
+              loading: boolean;
+              staleEditorVisible: boolean;
+              text: string;
+            }> = [];
+            const timer = window.setInterval(() => {
+              const state = window.__DIFF_E2E__?.getState();
+              const text = document.body.innerText;
+              const loading = text.includes("Reading Repository");
+              const commitVisible = /\bCOMMIT\b/.test(text);
+              const savePrVisible = /\bSAVE PR\b/.test(text);
+              samples.push({
+                selectedPath: state?.selectedRepoFilePath ?? null,
+                loading,
+                staleEditorVisible: Boolean(
+                  state?.viewMode === "code" &&
+                    targetPath &&
+                    state.selectedRepoFilePath !== targetPath &&
+                    !loading &&
+                    (commitVisible || savePrVisible),
+                ),
+                text: text.slice(0, 400),
+              });
+            }, 16);
+
+            window.__DIFF_DRAFT_FLICKER__ = { timer, samples };
+          }, actionState.reviewDraftPath);
+          const draftResult = await bridge<{ path: string; branch: string }>(page, "draftFirstReviewFix");
+          await waitForState(
+            page,
+            (current) =>
+              current.viewMode === "code" &&
+              current.repoTargetBranch === draftResult.branch &&
+              current.selectedRepoFilePath === draftResult.path,
+            30_000,
+          );
+          const flickerSamples = await page.evaluate(() => {
+            const monitor = window.__DIFF_DRAFT_FLICKER__;
+            if (!monitor) return [];
+            window.clearInterval(monitor.timer);
+            return monitor.samples;
+          });
+          const staleSamples = flickerSamples.filter((sample) => sample.staleEditorVisible);
+          assertPass(
+            "pr-action-draft-fix",
+            !E2E_PR_ACTION_EXPECT_FORK,
+            "Draft Fix prepared Code view edit",
+          );
+          assertPass(
+            "pr-action-draft-fix-no-stale-editor",
+            staleSamples.length === 0,
+            staleSamples.length === 0
+              ? "Draft Fix did not expose stale commit/PR controls during transition"
+              : `stale editor controls appeared in ${staleSamples.length} samples`,
+          );
+        }
+      } catch (error) {
+        await page.evaluate(() => {
+          const monitor = window.__DIFF_DRAFT_FLICKER__;
+          if (monitor) window.clearInterval(monitor.timer);
+        }).catch(() => undefined);
+        assertPass(
+          "pr-action-draft-fix",
+          E2E_PR_ACTION_EXPECT_FORK,
+          error instanceof Error ? error.message : "Draft Fix blocked",
+        );
+      }
+    } else {
+      skip("pr-action-draft-fix", "selected PR has no review comment with a file path");
+    }
+  } else {
+    skip(
+      "pr-action-guards",
+      "set DIFF_E2E_PR_ACTION_OWNER/REPO/NUMBER to verify Edit Branch and Draft Fix guards",
     );
   }
 

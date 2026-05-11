@@ -8,6 +8,18 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.7.0",
+    title: "Review Drafts",
+    description: "Draft fixes and branch edits are steadier.",
+    category: "feature",
+    details: [
+      "Save Draft Fix work until deleted",
+      "Keep PR branches and metadata in sync",
+      "Use HTTP refresh when live updates cannot connect",
+      "Keep Draft Fix transitions quiet"
+    ]
+  },
+  {
     version: "0.6.2",
     title: "Icon Polish",
     description: "Action icons feel quieter and more consistent.",

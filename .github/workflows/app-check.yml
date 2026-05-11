@@ -1,5 +1,5 @@
 ---
-name: 🐞 App Check
+name: 🐞 App
 
 "on":
   push:
@@ -9,7 +9,7 @@ name: 🐞 App Check
   workflow_dispatch:
 
 jobs:
-  verify:
+  check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

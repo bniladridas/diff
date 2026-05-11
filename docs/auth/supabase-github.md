@@ -9,6 +9,7 @@ For local development, set the frontend environment variables in `.env`:
 ```env
 VITE_SUPABASE_URL=your-supabase-project-url
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+GEMINI_API_KEY=optional-gemini-api-key-for-draft-fixes
 ```
 
 The preference schema is required. Apply all migrations to the same Supabase project referenced by the local environment:
@@ -16,8 +17,9 @@ The preference schema is required. Apply all migrations to the same Supabase pro
 - [../../supabase/migrations/20260508_create_user_preferences.sql](../../supabase/migrations/20260508_create_user_preferences.sql)
 - [../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql](../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql)
 - [../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql](../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql)
+- [../../supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql](../../supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql)
 
-The migrations create `public.user_preferences`, enable row-level security, add saved state columns, and allow the graphite theme.
+The migrations create `public.user_preferences`, enable row-level security, add saved state columns, allow the graphite theme, and store saved AI drafts.
 
 On GitHub, create an OAuth App, not a GitHub App. In Supabase, open `Authentication` -> `Providers`, expand GitHub, and copy the callback URL. Use your app URL as the OAuth homepage URL and the Supabase callback URL as the authorization callback URL. Then copy the OAuth client ID and secret back into Supabase.
 
@@ -26,6 +28,8 @@ Supabase also needs the application URLs registered under `Authentication` -> `U
 For Vercel, add the production Vercel origin or custom domain. Add preview origins too if preview sign-in should work.
 
 The GitHub integration requests `repo`, `read:user`, and `user:email` scopes. The server validates the Supabase session, verifies the provider token belongs to the same GitHub user, then uses that token for signed-in private reads and requested write actions. This is an OAuth model, not a GitHub App installation model.
+
+Gemini draft fixes are optional. When `GEMINI_API_KEY` is set, signed-in users can draft a review fix from a same-repo PR comment; the draft opens in Code view, syncs through Supabase until deleted, and still requires a manual commit.
 
 For repositories owned by an organization, the signed-in user must authorize the OAuth App and the organization may also need to approve that OAuth App under its third-party application access policy. If that approval is missing, public or server-token reads may still work while signed-in private reads or write actions fail with GitHub OAuth App access restriction errors.
 
@@ -91,6 +95,17 @@ export DIFF_E2E_LIVE_CODE_CREATE=1
 export DIFF_E2E_CODE_CREATE_PATH=docs/e2e-created.md
 npm run check:e2e
 ```
+
+Same-repo PR branch actions and fork guards can be checked with an existing PR:
+
+```bash
+export DIFF_E2E_PR_ACTION_OWNER=bniladridas
+export DIFF_E2E_PR_ACTION_REPO=diff
+export DIFF_E2E_PR_ACTION_NUMBER=1
+npm run check:e2e
+```
+
+For a fork PR, also set `DIFF_E2E_PR_ACTION_EXPECT_FORK=1`; Code writes and Draft Fix should stay blocked. Set `DIFF_E2E_LIVE_DRAFT_FIX=1` only when you want the verifier to call Gemini for a real draft.
 
 If the authenticated write checks fail with `Bad credentials`, the GitHub provider token is stale or revoked. Sign out in DIFF, revoke the GitHub OAuth grant if needed, sign in again, and regenerate the session snapshot before rerunning the verifier.
 

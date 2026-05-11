@@ -301,22 +301,57 @@ async function checkSupabasePreferences() {
     return;
   }
 
-  const response = await timedJsonCheck<unknown[]>(
-    "supabase-preferences",
-    `${SUPABASE_URL}/rest/v1/user_preferences?select=user_id,theme,default_repo_owner,default_repo_name,recent_repos,saved_pulls&limit=1`,
+  const preferencesStarted = nowMs();
+  const preferencesResponse = await fetch(
+    `${SUPABASE_URL}/rest/v1/user_preferences?select=user_id,theme,default_repo_owner,default_repo_name,recent_repos,saved_pulls,ai_drafts&limit=1`,
     {
       headers: {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ACCESS_TOKEN}`,
       },
     },
-    [200],
-    1400,
   );
+  const preferencesDurationMs = nowMs() - preferencesStarted;
+  const preferencesText = await preferencesResponse.text();
+
+  if (!preferencesResponse.ok) {
+    const isMissingAiDraftsColumn =
+      preferencesResponse.status === 400 &&
+      preferencesText.includes("ai_drafts") &&
+      preferencesText.includes("does not exist");
+    record({
+      name: "supabase-preferences",
+      status: isMissingAiDraftsColumn && !REQUIRE_AUTH_CHECKS ? "warn" : "fail",
+      durationMs: preferencesDurationMs,
+      detail: isMissingAiDraftsColumn
+        ? "ai_drafts migration pending"
+        : `HTTP ${preferencesResponse.status}${preferencesText ? `: ${preferencesText.slice(0, 140)}` : ""}`,
+    });
+    assertCondition(
+      "supabase-preferences-shape",
+      isMissingAiDraftsColumn && !REQUIRE_AUTH_CHECKS,
+      "user_preferences REST response shape",
+    );
+    return;
+  }
+
+  const response = preferencesText ? JSON.parse(preferencesText) as unknown[] : null;
+  record({
+    name: "supabase-preferences",
+    status: preferencesDurationMs > 1400 ? "warn" : "pass",
+    durationMs: preferencesDurationMs,
+    detail: preferencesDurationMs > 1400 ? `slow response (${formatMs(preferencesDurationMs)})` : "ok",
+  });
 
   assertCondition(
     "supabase-preferences-shape",
-    Array.isArray(response),
+    Array.isArray(response) &&
+      response.every((row) => (
+        row !== null &&
+        typeof row === "object" &&
+        "user_id" in row &&
+        "ai_drafts" in row
+      )),
     "user_preferences REST response shape",
   );
 }
@@ -498,6 +533,22 @@ async function main() {
           message: "check auth guard",
           branch: repoInfo?.default_branch ?? "HEAD",
           sha: "",
+        }),
+      },
+      [401, 503],
+      1800,
+    );
+
+    await timedJsonCheck(
+      "ai-review-fix-auth",
+      `${BASE_URL}/api/ai/review-fix`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: firstRepoFile.path,
+          content: repoContent ?? "",
+          reviewComment: "check auth guard",
         }),
       },
       [401, 503],

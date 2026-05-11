@@ -12,9 +12,11 @@ DIFF reads repository and PR data from GitHub. If you sign in, DIFF may use your
 
 You are responsible for any GitHub actions you submit through DIFF.
 
+Optional AI draft fixes may send selected file content and review comments to Gemini. Saved drafts sync through Supabase until deleted, and are not committed until you review and submit them.
+
 ## Availability
 
-DIFF depends on GitHub, Supabase, and network availability. API limits, OAuth restrictions, organization policies, or service outages may prevent some features from working.
+DIFF depends on GitHub, Supabase, Gemini, and network availability. API limits, OAuth restrictions, organization policies, or service outages may prevent some features from working.
 
 ## Acceptable Use
 
@@ -22,7 +24,7 @@ Do not use DIFF to access data without permission, abuse GitHub APIs, publish un
 
 ## No Affiliation
 
-DIFF is not an official product of GitHub, Supabase, or any repository owner whose data it reads.
+DIFF is not an official product of GitHub, Supabase, Gemini, or any repository owner whose data it reads.
 
 Project and company context is available at https://github.com/Coccinella-Labs/coccinella.
 

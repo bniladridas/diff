@@ -260,6 +260,13 @@ async function startServer() {
     return null;
   };
 
+  const extractGeminiJson = (value: string) => {
+    const trimmed = value.trim();
+    const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    const jsonText = fencedMatch ? fencedMatch[1].trim() : trimmed;
+    return JSON.parse(jsonText);
+  };
+
   const parseLiveSubscription = (message: string) => {
     const payload = JSON.parse(message);
     const owner = typeof payload.owner === "string" ? payload.owner.trim() : "";
@@ -308,6 +315,175 @@ async function startServer() {
         }
       }
       handleError(res, error, "Pulls");
+    }
+  });
+
+  app.post("/api/ai/review-fix", async (req, res) => {
+    try {
+      const { githubProviderToken } = await getAuthenticatedGitHubContext(req);
+
+      const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
+      if (!geminiApiKey) {
+        res.status(503).json({ error: "Gemini is not configured." });
+        return;
+      }
+
+      const owner = typeof req.body?.owner === "string" ? req.body.owner.trim() : "";
+      const repo = typeof req.body?.repo === "string" ? req.body.repo.trim() : "";
+      const rawPullNumber = Number(req.body?.pullNumber);
+      const pullNumber = Number.isFinite(rawPullNumber) && rawPullNumber > 0
+        ? rawPullNumber
+        : null;
+      const rawCommentId = Number(req.body?.commentId);
+      const commentId = Number.isFinite(rawCommentId) && rawCommentId > 0
+        ? rawCommentId
+        : null;
+      const ref = typeof req.body?.ref === "string" ? req.body.ref.trim() : "";
+      const filePath = typeof req.body?.path === "string" ? req.body.path.trim() : "";
+
+      if (!owner || !repo || !pullNumber || !commentId || !ref) {
+        res.status(400).json({ error: "Repository, pull request, comment, and branch are required." });
+        return;
+      }
+
+      if (!filePath) {
+        res.status(400).json({ error: "File path is required." });
+        return;
+      }
+
+      if (isInvalidRepoFilePath(filePath) || /[\0\r\n]/.test(ref)) {
+        res.status(400).json({ error: "File path is invalid." });
+        return;
+      }
+
+      const authHeaders = {
+        Accept: "application/vnd.github.v3+json",
+        Authorization: `token ${githubProviderToken}`,
+      };
+
+      const [pullResponse, commentResponse] = await Promise.all([
+        axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`, {
+          headers: authHeaders,
+        }),
+        axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls/comments/${commentId}`, {
+          headers: authHeaders,
+        }),
+      ]);
+
+      const pull = pullResponse.data;
+      const comment = commentResponse.data;
+      const pullUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`;
+      const headRepoFullName = String(pull?.head?.repo?.full_name || "").toLowerCase();
+      const expectedRepoFullName = `${owner}/${repo}`.toLowerCase();
+      const reviewComment = typeof comment?.body === "string" ? comment.body.trim() : "";
+
+      if (
+        headRepoFullName !== expectedRepoFullName ||
+        pull?.head?.ref !== ref ||
+        comment?.pull_request_url !== pullUrl ||
+        comment?.path !== filePath
+      ) {
+        res.status(403).json({ error: "AI draft target does not match the pull request." });
+        return;
+      }
+
+      if (!reviewComment) {
+        res.status(400).json({ error: "Review comment is required." });
+        return;
+      }
+
+      const contentResponse = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath).replace(/%2F/g, "/")}`,
+        {
+          headers: {
+            Accept: "application/vnd.github.raw",
+            Authorization: `token ${githubProviderToken}`,
+          },
+          params: { ref },
+          responseType: "text",
+          transformResponse: [(data) => data],
+        },
+      );
+      const content = typeof contentResponse.data === "string"
+        ? contentResponse.data
+        : String(contentResponse.data ?? "");
+
+      if (content.length > 120_000) {
+        res.status(413).json({ error: "File is too large for an AI draft." });
+        return;
+      }
+
+      const prompt = [
+        "You are editing one repository file in response to a pull request review comment.",
+        "Return JSON only with this shape: {\"content\":\"full updated file content\",\"summary\":\"short plain-language summary\"}.",
+        "Always include the content property, even when the full updated file content is an empty string.",
+        "Keep the change minimal and directly tied to the review comment.",
+        "If the requested change is ambiguous or not safely inferable from the file, return the original content unchanged and say no safe draft was needed.",
+        "Do not make unrelated cleanup or inferred maintenance changes.",
+        "Do not add explanations outside JSON. Do not use markdown fences.",
+        `File path: ${filePath}`,
+        "Review comment:",
+        reviewComment,
+        "Current file content:",
+        content,
+      ].join("\n\n");
+
+      const response = await axios.post(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        {
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+          },
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": geminiApiKey,
+          },
+        },
+      );
+
+      const text = response.data?.candidates?.[0]?.content?.parts
+        ?.map((part: any) => (typeof part.text === "string" ? part.text : ""))
+        .join("")
+        .trim();
+
+      if (!text) {
+        res.status(502).json({ error: "Gemini returned an empty draft." });
+        return;
+      }
+
+      const parsed = extractGeminiJson(text);
+      const parsedContent = parsed.content;
+      const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+      if (typeof parsedContent !== "string" && content.length > 0) {
+        res.status(502).json({ error: "Gemini draft did not include file content." });
+        return;
+      }
+
+      let nextContent = typeof parsedContent === "string" ? parsedContent : "";
+
+      if (content.endsWith("\n") && !nextContent.endsWith("\n")) {
+        nextContent += "\n";
+      } else if (!content.endsWith("\n") && nextContent.endsWith("\n")) {
+        nextContent = nextContent.replace(/\n+$/, "");
+      }
+
+      res.json({
+        model: "gemini-2.5-flash",
+        content: nextContent,
+        originalContent: content,
+        summary: summary || "Drafted a minimal fix.",
+      });
+    } catch (error: any) {
+      handleError(res, error, "GeminiReviewFix");
     }
   });
 

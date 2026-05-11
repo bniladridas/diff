@@ -53,6 +53,17 @@
     @apply bg-onyx text-white antialiased selection:bg-brand-orange selection:text-white;
   }
 
+  input[type="number"].quiet-number-input {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  input[type="number"].quiet-number-input::-webkit-outer-spin-button,
+  input[type="number"].quiet-number-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
   /* Prose Overrides for Code/Backticks */
   .prose pre {
     @apply !bg-black/30 !border !border-white/5 !rounded-lg !p-4 !my-6 font-mono text-sm;

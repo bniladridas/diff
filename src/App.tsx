@@ -62,6 +62,7 @@ import {
   LogOut,
   Bookmark,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 import Prism from "prismjs";
 import "prismjs/components/prism-bash";
@@ -90,6 +91,7 @@ import {
   fetchUserPreferences,
   isSupabaseConfigured,
   isMissingUserPreferencesTableError,
+  type AiDraftPreference,
   type RecentRepoPreference,
   type SavedPullPreference,
   supabase,
@@ -319,8 +321,12 @@ interface DiffE2EState {
   recentReposCount: number;
   savedPullsCount: number;
   selectedPullNumber: number | null;
+  selectedFileName: string | null;
+  selectedRepoFilePath: string | null;
   loadedPullNumbers: number[];
   loadedFilesCount: number;
+  reviewDraftPath: string | null;
+  repoTargetBranch: string;
   loading: boolean;
   activeTab: "diff" | "discussion" | "checks" | "timeline";
   viewMode: "pulls" | "branches" | "code";
@@ -360,6 +366,15 @@ interface DiffE2EBridge {
     event: "COMMENT" | "APPROVE" | "REQUEST_CHANGES",
     body?: string,
   ) => Promise<void>;
+  getSelectedPullBranchActions: () => {
+    canWorkInCode: boolean;
+    hasReviewDraftTarget: boolean;
+    reviewDraftPath: string | null;
+    headRepo: string | null;
+    headRef: string | null;
+  };
+  openSelectedPullBranchInCode: () => Promise<{ branch: string; path: string | null }>;
+  draftFirstReviewFix: () => Promise<{ path: string; branch: string }>;
   getCodeFile: (path: string) => Promise<{ path: string; content: string; sha: string }>;
   commitCodeFile: (
     path: string,
@@ -446,6 +461,12 @@ const preventMouseFocusOnClickControls = (event: ReactMouseEvent<HTMLElement>) =
 const orderPullsForStream = (items: PullRequest[]) => {
   return [...items].sort((a, b) => b.number - a.number);
 };
+const moveBranchToFront = (items: Branch[], branchName: string | null) => {
+  if (!branchName) return items;
+  const pinnedBranch = items.find((branch) => branch.name === branchName);
+  if (!pinnedBranch) return items;
+  return [pinnedBranch, ...items.filter((branch) => branch.name !== branchName)];
+};
 const clearAuthHashFromUrl = () => {
   if (!window.location.hash && !window.location.href.endsWith("#")) return;
   window.history.replaceState(
@@ -456,6 +477,7 @@ const clearAuthHashFromUrl = () => {
 };
 const MAX_RECENT_REPOS = 6;
 const MAX_SAVED_PULLS = 25;
+const MAX_VISIBLE_REPO_FILES = 500;
 const ALERT_TYPES = {
   NOTE: "border-sky-500/20 bg-sky-500/[0.06] text-sky-300",
   TIP: "border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-300",
@@ -942,6 +964,7 @@ const getPrismLanguage = (path: string) => {
   if (ext === "tsx") return "tsx";
   if (["json", "jsonc", "json5"].includes(ext)) return "json";
   if (["yml", "yaml"].includes(ext)) return "yaml";
+  if (fileName === "cargo.lock") return "toml";
   if (ext === "toml") return "toml";
   if (["ini", "conf", "cfg"].includes(ext)) return "ini";
   if (["sh", "bash", "zsh", "fish"].includes(ext)) return "bash";
@@ -1010,9 +1033,11 @@ export default function App() {
   const [repoPullTitle, setRepoPullTitle] = useState("");
   const [repoPullBody, setRepoPullBody] = useState("");
   const [repoPullUrl, setRepoPullUrl] = useState<string | null>(null);
+  const [aiDraftSummary, setAiDraftSummary] = useState<string | null>(null);
   const [creatingRepoBranch, setCreatingRepoBranch] = useState(false);
   const [creatingRepoPull, setCreatingRepoPull] = useState(false);
   const [committingRepoFile, setCommittingRepoFile] = useState(false);
+  const [draftingReviewFix, setDraftingReviewFix] = useState<number | null>(null);
   const [loadingRepoTree, setLoadingRepoTree] = useState(false);
   const [loadingRepoFile, setLoadingRepoFile] = useState(false);
   const [repoSearchQuery, setRepoSearchQuery] = useState("");
@@ -1072,6 +1097,8 @@ export default function App() {
   const [isSidebarSavedPullsOpen, setIsSidebarSavedPullsOpen] = useState(false);
   const [recentRepos, setRecentRepos] = useState<RecentRepoPreference[]>([]);
   const [savedPulls, setSavedPulls] = useState<SavedPullPreference[]>([]);
+  const [aiDrafts, setAiDrafts] = useState<AiDraftPreference[]>([]);
+  const [activeAiDraftId, setActiveAiDraftId] = useState<string | null>(null);
   const [newCommentBody, setNewCommentBody] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const [newReviewCommentBody, setNewReviewCommentBody] = useState("");
@@ -1102,12 +1129,27 @@ export default function App() {
   const viewModeRef = useRef(viewMode);
   const stateFilterRef = useRef(stateFilter);
   const selectedPullNumberRef = useRef<number | null>(null);
+  const selectedFileNameRef = useRef<string | null>(null);
+  const selectedRepoFilePathRef = useRef<string | null>(null);
   const diffHighlightTimeoutRef = useRef<number | null>(null);
   const authMenuRef = useRef<HTMLDivElement | null>(null);
   const preferencesHydratedRef = useRef(false);
   const suspendedCorePreferenceValueRef = useRef<string | null>(null);
   const suspendedRecentReposValueRef = useRef<string | null>(null);
   const suspendedSavedPullsValueRef = useRef<string | null>(null);
+  const suspendedAiDraftsValueRef = useRef<string | null>(null);
+  const preferenceSyncTimerRef = useRef<number | null>(null);
+  const pendingPreferenceSyncRef = useRef<{
+    userId: string;
+    payload: {
+      theme?: ThemePreference;
+      default_repo_owner?: string;
+      default_repo_name?: string;
+      recent_repos?: RecentRepoPreference[];
+      saved_pulls?: SavedPullPreference[];
+      ai_drafts?: AiDraftPreference[];
+    };
+  } | null>(null);
   const preferenceSyncChainRef = useRef(Promise.resolve());
   const preferenceSyncSequenceRef = useRef(0);
   const preferenceSyncPendingCountRef = useRef(0);
@@ -1122,6 +1164,14 @@ export default function App() {
     viewModeRef.current = viewMode;
     stateFilterRef.current = stateFilter;
   }, [viewMode, stateFilter]);
+
+  useEffect(() => {
+    selectedFileNameRef.current = selectedFile?.filename ?? null;
+  }, [selectedFile?.filename]);
+
+  useEffect(() => {
+    selectedRepoFilePathRef.current = selectedRepoFile?.path ?? null;
+  }, [selectedRepoFile?.path]);
 
   const diffRows = useMemo(() => parseDiffRows(selectedFile?.patch), [selectedFile?.patch]);
   const repoFiles = useMemo(() => repoTree.filter((item) => item.type === "blob"), [repoTree]);
@@ -1162,9 +1212,13 @@ export default function App() {
         ? repoSearchResults
             .filter((result) => result.scope === "repo" && result.repoItem)
             .map((result) => result.repoItem!)
-        : repoFiles.slice(0, 250),
+        : repoFiles.slice(0, MAX_VISIBLE_REPO_FILES),
     [normalizedRepoSearchQuery, repoFiles, repoSearchResults],
   );
+  const repoFilesCountLabel =
+    visibleRepoFiles.length === repoFiles.length
+      ? repoFiles.length.toLocaleString()
+      : `${visibleRepoFiles.length.toLocaleString()} / ${repoFiles.length.toLocaleString()}`;
   const highlightedRepoFileContent = useMemo(() => {
     const filePath = isCreatingRepoFile ? repoNewFilePath : selectedRepoFile?.path;
     if (repoFileContent == null || !filePath) return null;
@@ -1211,20 +1265,46 @@ export default function App() {
       )
     : false;
   const selectedPullLabels = selectedPull?.labels ?? [];
+  const eligibleDraftFixComments = reviewComments.filter((comment) => Boolean(comment.path));
+  const makeAiDraftId = (
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    commentId: number,
+    path: string,
+    branch: string,
+  ) => `${owner}/${repo}#${pullNumber}:${commentId}:${branch}:${path}`;
+  const findSavedAiDraft = (comment: GithubComment) => {
+    const headRef = selectedPull?.head?.ref;
+    const filePath = comment.path?.trim();
+    if (!selectedPull || !headRef || !filePath) return null;
+    const draftId = makeAiDraftId(
+      currentOwner,
+      currentRepo,
+      selectedPull.number,
+      comment.id,
+      filePath,
+      headRef,
+    );
+    return aiDrafts.find((draft) => draft.id === draftId) ?? null;
+  };
   const parsedPullLabelsDraft = pullLabelsDraft
     .split(",")
     .map((label) => label.trim())
     .filter(Boolean);
   const activeRepoRef = repoTargetBranch.trim() || repoInfo?.default_branch || "HEAD";
   const activeRepoFilePath = isCreatingRepoFile ? repoNewFilePath.trim() : selectedRepoFile?.path ?? "";
+  const isPullBranchWorkspace = viewMode === "code" && Boolean(selectedPull && repoTargetBranch.trim());
+  const isRepoBufferLoading = loadingRepoTree || loadingRepoFile;
   const canDeletePullHeadBranch =
     selectedPull?.state === "closed" &&
     selectedPull?.merged &&
     selectedPull.head?.repo?.full_name === `${currentOwner}/${currentRepo}` &&
     !!selectedPull.head?.ref;
-  const canResolvePullConflictsInCode =
+  const canWorkPullBranchInCode =
     selectedPull?.head?.repo?.full_name === `${currentOwner}/${currentRepo}` &&
     !!selectedPull.head?.ref;
+  const canResolvePullConflictsInCode = canWorkPullBranchInCode;
   const canCommitRepoFile =
     isEditingRepoFile &&
     !!activeRepoFilePath &&
@@ -1781,6 +1861,249 @@ export default function App() {
     }
   };
 
+  const getPreferredPullFilePath = async () => {
+    const localPath = selectedFile?.filename ?? files[0]?.filename;
+    if (localPath) return localPath;
+    if (!selectedPull?.number) return "";
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}/files?owner=${currentOwner}&repo=${currentRepo}`,
+        { headers: getReadHeaders() },
+      );
+      if (!response.ok) return "";
+      const data = await response.json();
+      if (!Array.isArray(data) || data.length === 0) return "";
+      setFiles(data);
+      setSelectedFile(data[0]);
+      return typeof data[0]?.filename === "string" ? data[0].filename : "";
+    } catch {
+      return "";
+    }
+  };
+
+  const workPullBranchInCode = async () => {
+    const headRef = selectedPull?.head?.ref;
+    if (!headRef || !canWorkPullBranchInCode) {
+      setWriteError("Code edits are only available for branches in this repository.");
+      return null;
+    }
+
+    const preferredPath = await getPreferredPullFilePath();
+    setWriteError(null);
+    setAiDraftSummary(null);
+    setActiveAiDraftId(null);
+    setRepoTargetBranch(headRef);
+    setRepoNewBranchName("");
+    setRepoPullTitle(selectedPull?.title || "");
+    setRepoPullBody(selectedPull?.body || "");
+    setRepoPullUrl(selectedPull?.html_url ?? null);
+    setRepoSearchQuery("");
+    setViewMode("code");
+    setActiveTab("diff");
+    await fetchRepoTree(headRef, {
+      preservePull: true,
+      preferredPath,
+    });
+    return { branch: headRef, path: preferredPath || null };
+  };
+
+  const openAiDraft = async (draft: AiDraftPreference) => {
+    setWriteError(null);
+    setLoadingRepoFile(true);
+    try {
+      setRepoTargetBranch(draft.branch);
+      setRepoNewBranchName("");
+      setRepoPullTitle((current) => current || draft.pull_title || `Update ${draft.path}`);
+      setRepoPullBody((current) => current || "Updated from DIFF Code view.");
+      setRepoPullUrl(selectedPull?.html_url ?? null);
+      setRepoSearchQuery(draft.path);
+      setSelectedRepoFile(null);
+      setRepoFileContent(null);
+      setRepoFileDraft("");
+      setIsCreatingRepoFile(false);
+      setIsEditingRepoFile(false);
+      setViewMode("code");
+      setActiveTab("diff");
+      await fetchRepoTree(draft.branch, { preservePull: true, preferredPath: draft.path });
+      const fileSha = await getRepoFileSha(draft.path, draft.branch).catch(() => "");
+      const contentResponse = await fetch(
+        `/api/repo/content?owner=${draft.owner}&repo=${draft.repo}&path=${encodeURIComponent(draft.path)}&ref=${encodeURIComponent(draft.branch)}`,
+        { headers: getReadHeaders() },
+      );
+      if (!contentResponse.ok) {
+        const errorData = await contentResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || `File load failed with ${contentResponse.status}`);
+      }
+      const currentContent = await contentResponse.text();
+      setSelectedRepoFile({
+        path: draft.path,
+        mode: "100644",
+        type: "blob",
+        sha: fileSha,
+        size: new Blob([currentContent]).size,
+        url: "",
+      });
+      if (currentContent !== draft.original_content) {
+        setRepoFileContent(currentContent);
+        setRepoFileDraft(currentContent);
+        setRepoCommitMessage(`Update ${draft.path}`);
+        setIsCreatingRepoFile(false);
+        setIsEditingRepoFile(false);
+        setActiveAiDraftId(null);
+        setAiDraftSummary(null);
+        setWriteError("Saved draft is stale because this branch file changed. Draft again from the review comment.");
+        return;
+      }
+      setRepoFileContent(draft.original_content);
+      setRepoFileDraft(draft.draft_content);
+      setRepoCommitMessage(`Address review for ${draft.path}`);
+      setIsCreatingRepoFile(false);
+      setIsEditingRepoFile(true);
+      setAiDraftSummary(draft.summary || "Saved draft restored.");
+      setActiveAiDraftId(draft.id);
+    } finally {
+      setLoadingRepoFile(false);
+    }
+  };
+
+  const deleteAiDraft = (draftId = activeAiDraftId) => {
+    if (!draftId) return;
+    setAiDrafts((current) => current.filter((draft) => draft.id !== draftId));
+    if (activeAiDraftId === draftId) {
+      setActiveAiDraftId(null);
+      setAiDraftSummary(null);
+    }
+  };
+
+  const draftReviewFixWithGemini = async (comment: GithubComment) => {
+    const headRef = selectedPull?.head?.ref;
+    const filePath = comment.path?.trim() ?? "";
+
+    if (!headRef || !canWorkPullBranchInCode) {
+      setWriteError("AI drafts are only available for branches in this repository.");
+      return;
+    }
+
+    if (!filePath) {
+      setWriteError("Review comment file path is unavailable.");
+      return;
+    }
+
+    const savedDraft = findSavedAiDraft(comment);
+    if (savedDraft) {
+      try {
+        await openAiDraft(savedDraft);
+      } catch (error) {
+        setWriteError(error instanceof Error ? error.message : "Failed to open saved draft.");
+      }
+      return;
+    }
+
+    setDraftingReviewFix(comment.id);
+    setWriteError(null);
+    setAiDraftSummary(null);
+    setActiveAiDraftId(null);
+
+    try {
+      const draftResponse = await fetch("/api/ai/review-fix", {
+        method: "POST",
+        headers: getWriteHeaders(),
+        body: JSON.stringify({
+          owner: currentOwner,
+          repo: currentRepo,
+          pullNumber: selectedPull.number,
+          commentId: comment.id,
+          path: filePath,
+          ref: headRef,
+        }),
+      });
+      const draftData = await draftResponse.json().catch(() => ({}));
+      if (!draftResponse.ok) {
+        throw new Error(draftData.error || `Gemini draft failed with ${draftResponse.status}`);
+      }
+
+      if (typeof draftData.content !== "string") {
+        throw new Error("Gemini did not return file content.");
+      }
+      const draftContent = draftData.content;
+      if (typeof draftData.originalContent !== "string") {
+        throw new Error("Gemini did not return the verified file baseline.");
+      }
+      const verifiedOriginalContent = draftData.originalContent;
+      const summary =
+        typeof draftData.summary === "string"
+          ? draftData.summary
+          : "Gemini drafted a minimal fix.";
+      const draftId = makeAiDraftId(
+        currentOwner,
+        currentRepo,
+        selectedPull.number,
+        comment.id,
+        filePath,
+        headRef,
+      );
+      const savedDraft: AiDraftPreference = {
+        id: draftId,
+        owner: currentOwner,
+        repo: currentRepo,
+        pull_number: selectedPull.number,
+        pull_title: selectedPull.title,
+        branch: headRef,
+        path: filePath,
+        comment_id: comment.id,
+        comment_body: comment.body,
+        original_content: verifiedOriginalContent,
+        draft_content: draftContent,
+        summary,
+        updated_at: new Date().toISOString(),
+      };
+
+      const fileSha = await getRepoFileSha(filePath, headRef).catch(() => "");
+      const nextFile: RepoTreeItem = {
+        path: filePath,
+        mode: "100644",
+        type: "blob",
+        sha: fileSha,
+        size: new Blob([verifiedOriginalContent]).size,
+        url: "",
+      };
+
+      setLoadingRepoFile(true);
+      setRepoTargetBranch(headRef);
+      setRepoNewBranchName("");
+      setRepoPullTitle((current) => current || selectedPull?.title || `Update ${filePath}`);
+      setRepoPullBody((current) => current || selectedPull?.body || "Updated from DIFF Code view.");
+      setRepoPullUrl(selectedPull?.html_url ?? null);
+      setRepoSearchQuery(filePath);
+      setSelectedRepoFile(null);
+      setRepoFileContent(null);
+      setRepoFileDraft("");
+      setIsCreatingRepoFile(false);
+      setIsEditingRepoFile(false);
+      setViewMode("code");
+      setActiveTab("diff");
+      await fetchRepoTree(headRef, { preservePull: true, preferredPath: filePath });
+      setSelectedRepoFile(nextFile);
+      setRepoFileContent(verifiedOriginalContent);
+      setRepoFileDraft(draftContent);
+      setRepoCommitMessage(`Address review for ${filePath}`);
+      setIsCreatingRepoFile(false);
+      setIsEditingRepoFile(true);
+      setActiveAiDraftId(draftId);
+      setAiDraftSummary(summary);
+      setAiDrafts((current) => [
+        savedDraft,
+        ...current.filter((draft) => draft.id !== draftId),
+      ].slice(0, 25));
+    } catch (error) {
+      setWriteError(error instanceof Error ? error.message : "Failed to draft review fix.");
+    } finally {
+      setDraftingReviewFix(null);
+      setLoadingRepoFile(false);
+    }
+  };
+
   const resolvePullConflictsInCode = async () => {
     const headRef = selectedPull?.head?.ref;
     if (!headRef || !canResolvePullConflictsInCode) {
@@ -1789,12 +2112,16 @@ export default function App() {
     }
 
     setWriteError(null);
+    const preferredPath = await getPreferredPullFilePath();
     setRepoTargetBranch(headRef);
     setRepoNewBranchName("");
     setRepoPullUrl(selectedPull?.html_url ?? null);
     setViewMode("code");
     setActiveTab("diff");
-    await fetchRepoTree(headRef);
+    await fetchRepoTree(headRef, {
+      preservePull: true,
+      preferredPath,
+    });
   };
 
   const deletePullHeadBranch = async () => {
@@ -1971,7 +2298,7 @@ export default function App() {
               </span>
               <span className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] leading-none text-white/18 transition-colors group-hover/anchor:text-brand-orange">
                 Open in Diff
-                <ArrowRight className="w-2.5 h-2.5" />
+                <ArrowRight className="w-2.5 h-2.5 transition-transform duration-300 ease-out group-hover/anchor:translate-x-0.5 group-hover/anchor:scale-[1.04]" />
               </span>
             </button>
           )}
@@ -2399,7 +2726,7 @@ export default function App() {
     authUserIdRef.current = authUser?.id ?? null;
   }, [authUser?.id]);
 
-  const queuePreferenceSync = useCallback(
+  const runPreferenceSync = useCallback(
     (
       userId: string,
       syncPayload: {
@@ -2408,6 +2735,7 @@ export default function App() {
         default_repo_name?: string;
         recent_repos?: RecentRepoPreference[];
         saved_pulls?: SavedPullPreference[];
+        ai_drafts?: AiDraftPreference[];
       },
     ) => {
       const syncSequence = preferenceSyncSequenceRef.current + 1;
@@ -2455,12 +2783,54 @@ export default function App() {
     [],
   );
 
+  const queuePreferenceSync = useCallback(
+    (
+      userId: string,
+      syncPayload: {
+        theme?: ThemePreference;
+        default_repo_owner?: string;
+        default_repo_name?: string;
+        recent_repos?: RecentRepoPreference[];
+        saved_pulls?: SavedPullPreference[];
+        ai_drafts?: AiDraftPreference[];
+      },
+    ) => {
+      const pending = pendingPreferenceSyncRef.current;
+      pendingPreferenceSyncRef.current = {
+        userId,
+        payload: pending?.userId === userId
+          ? { ...pending.payload, ...syncPayload }
+          : syncPayload,
+      };
+      setPreferencesSyncing(true);
+
+      if (preferenceSyncTimerRef.current !== null) {
+        window.clearTimeout(preferenceSyncTimerRef.current);
+      }
+
+      preferenceSyncTimerRef.current = window.setTimeout(() => {
+        preferenceSyncTimerRef.current = null;
+        const nextSync = pendingPreferenceSyncRef.current;
+        pendingPreferenceSyncRef.current = null;
+        if (!nextSync) return;
+        runPreferenceSync(nextSync.userId, nextSync.payload);
+      }, 250);
+    },
+    [runPreferenceSync],
+  );
+
   useEffect(() => {
     if (!supabase || !authUser) {
       preferencesHydratedRef.current = false;
       suspendedCorePreferenceValueRef.current = null;
       suspendedRecentReposValueRef.current = null;
       suspendedSavedPullsValueRef.current = null;
+      suspendedAiDraftsValueRef.current = null;
+      if (preferenceSyncTimerRef.current !== null) {
+        window.clearTimeout(preferenceSyncTimerRef.current);
+        preferenceSyncTimerRef.current = null;
+      }
+      pendingPreferenceSyncRef.current = null;
       preferenceSyncSequenceRef.current = 0;
       preferenceSyncPendingCountRef.current = 0;
       preferenceSyncChainRef.current = Promise.resolve();
@@ -2469,6 +2839,8 @@ export default function App() {
       setPreferencesSetupHint(null);
       setRecentRepos([]);
       setSavedPulls([]);
+      setAiDrafts([]);
+      setActiveAiDraftId(null);
       return;
     }
 
@@ -2506,6 +2878,9 @@ export default function App() {
         suspendedSavedPullsValueRef.current = JSON.stringify(
           data.saved_pulls ?? [],
         );
+        suspendedAiDraftsValueRef.current = JSON.stringify(
+          data.ai_drafts ?? [],
+        );
 
         if (data.theme && data.theme !== theme) {
           setTheme(data.theme);
@@ -2520,6 +2895,7 @@ export default function App() {
 
         setRecentRepos(data.recent_repos ?? []);
         setSavedPulls(data.saved_pulls ?? []);
+        setAiDrafts(data.ai_drafts ?? []);
       }
 
       preferencesHydratedRef.current = true;
@@ -2585,6 +2961,22 @@ export default function App() {
       saved_pulls: savedPulls,
     });
   }, [authUser?.id, queuePreferenceSync, savedPulls]);
+
+  useEffect(() => {
+    if (!supabase || !authUser || !preferencesHydratedRef.current) return;
+
+    const currentAiDraftsValue = JSON.stringify(aiDrafts);
+    if (suspendedAiDraftsValueRef.current != null) {
+      const shouldSkip =
+        suspendedAiDraftsValueRef.current === currentAiDraftsValue;
+      suspendedAiDraftsValueRef.current = null;
+      if (shouldSkip) return;
+    }
+
+    queuePreferenceSync(authUser.id, {
+      ai_drafts: aiDrafts,
+    });
+  }, [aiDrafts, authUser?.id, queuePreferenceSync]);
 
   useEffect(() => {
     if (!authMenuOpen) return;
@@ -2768,8 +3160,12 @@ export default function App() {
         recentReposCount: recentRepos.length,
         savedPullsCount: savedPulls.length,
         selectedPullNumber: selectedPull?.number ?? null,
+        selectedFileName: selectedFile?.filename ?? null,
+        selectedRepoFilePath: selectedRepoFile?.path ?? null,
         loadedPullNumbers: pulls.map((pull) => pull.number),
         loadedFilesCount: files.length,
+        reviewDraftPath: reviewComments.find((comment) => Boolean(comment.path))?.path ?? null,
+        repoTargetBranch,
         loading,
         activeTab,
         viewMode,
@@ -2894,6 +3290,36 @@ export default function App() {
         if (writeError || authError) {
           throw new Error(writeError || authError || "Review submission failed.");
         }
+      },
+      getSelectedPullBranchActions: () => ({
+        canWorkInCode: Boolean(canWorkPullBranchInCode),
+        hasReviewDraftTarget: reviewComments.some((comment) => Boolean(comment.path)),
+        reviewDraftPath: reviewComments.find((comment) => Boolean(comment.path))?.path ?? null,
+        headRepo: selectedPull?.head?.repo?.full_name ?? null,
+        headRef: selectedPull?.head?.ref ?? null,
+      }),
+      openSelectedPullBranchInCode: async () => {
+        const branch = selectedPull?.head?.ref;
+        if (!branch) {
+          throw new Error("No selected pull branch is available.");
+        }
+        if (!canWorkPullBranchInCode) {
+          throw new Error("Selected pull branch is outside this repository.");
+        }
+        const result = await workPullBranchInCode();
+        return { branch, path: result?.path ?? null };
+      },
+      draftFirstReviewFix: async () => {
+        const comment = reviewComments.find((item) => Boolean(item.path));
+        const branch = selectedPull?.head?.ref;
+        if (!comment?.path || !branch) {
+          throw new Error("No review comment with a file path is available.");
+        }
+        if (!canWorkPullBranchInCode) {
+          throw new Error("Draft Fix is only available for branches in this repository.");
+        }
+        await draftReviewFixWithGemini(comment);
+        return { path: comment.path, branch };
       },
       getCodeFile: async (filePath) => {
         const branch = activeRepoRef;
@@ -3027,6 +3453,7 @@ export default function App() {
     pulls,
     files,
     recentRepos.length,
+    reviewComments,
     savedPulls.length,
     selectedPull,
     selectedFile,
@@ -3092,9 +3519,15 @@ export default function App() {
     } else if (viewMode === "branches") {
       fetchBranches(1, true);
     } else {
-      fetchRepoTree();
+      fetchRepoTree(undefined, {
+        preservePull: Boolean(selectedPullNumberRef.current && repoTargetBranch.trim()),
+        preferredPath:
+          selectedFileNameRef.current ??
+          selectedRepoFilePathRef.current ??
+          undefined,
+      });
     }
-  }, [viewMode, stateFilter, currentOwner, currentRepo, isVerified, authLoading, canReadRemoteRepo, readAuthKey]);
+  }, [viewMode, stateFilter, currentOwner, currentRepo, repoTargetBranch, isVerified, authLoading, canReadRemoteRepo, readAuthKey]);
 
   const fetchRepoInfo = async () => {
     if (!canReadRemoteRepo) return null;
@@ -3121,6 +3554,11 @@ export default function App() {
 
   const fetchBranches = async (pageNum = 1, reset = false) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
+    const selectedPullHeadRepo = selectedPull?.head?.repo?.full_name ?? null;
+    const selectedPullHeadRef =
+      reset && selectedPullHeadRepo === requestKey
+        ? selectedPull?.head?.ref ?? null
+        : null;
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
     setError(null);
@@ -3145,13 +3583,14 @@ export default function App() {
       const data: Branch[] = await response.json();
       if (repoKeyRef.current !== requestKey) return;
 
-      const newBranches = reset ? data : [...branches, ...data];
+      const orderedData = reset ? moveBranchToFront(data, selectedPullHeadRef) : data;
+      const newBranches = reset ? orderedData : [...branches, ...orderedData];
       setBranches(newBranches);
       setHasMore(data.length === 30);
 
       if (reset) {
-        if (data.length > 0) {
-          handleSelectBranch(data[0], comparisonRepoInfo);
+        if (orderedData.length > 0) {
+          handleSelectBranch(orderedData[0], comparisonRepoInfo);
         } else {
           setSelectedBranch(null);
           setFiles([]);
@@ -3169,24 +3608,33 @@ export default function App() {
     }
   };
 
-  const fetchRepoTree = async (refOverride?: string) => {
+  const fetchRepoTree = async (
+    refOverride?: string,
+    options?: { preservePull?: boolean; preferredPath?: string },
+  ) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
+    const shouldPreservePull = Boolean(options?.preservePull);
+    const preferredPath =
+      options?.preferredPath?.trim() ||
+      (shouldPreservePull ? selectedFile?.filename ?? "" : "");
     setLoading(true);
     setLoadingRepoTree(true);
     setError(null);
-    selectedPullNumberRef.current = null;
-    setSelectedPull(null);
-    setSelectedBranch(null);
-    setFiles([]);
-    setSelectedFile(null);
-    setComments([]);
-    setReviewComments([]);
-    setCommits([]);
-    setReviews([]);
-    setTimelineEvents([]);
-    setContentEdits([]);
-    setCheckRuns([]);
-    setCheckSummary(null);
+    if (!shouldPreservePull) {
+      selectedPullNumberRef.current = null;
+      setSelectedPull(null);
+      setSelectedBranch(null);
+      setFiles([]);
+      setSelectedFile(null);
+      setComments([]);
+      setReviewComments([]);
+      setCommits([]);
+      setReviews([]);
+      setTimelineEvents([]);
+      setContentEdits([]);
+      setCheckRuns([]);
+      setCheckSummary(null);
+    }
     setActiveTab("diff");
     if (!canReadRemoteRepo) {
       setLoading(false);
@@ -3218,7 +3666,12 @@ export default function App() {
       setRepoTreeTruncated(Boolean(data.truncated));
       setHasMore(false);
 
-      const firstFile = nextTree.find((item: RepoTreeItem) => item.type === "blob") ?? null;
+      const firstFile =
+        nextTree.find(
+          (item: RepoTreeItem) => item.type === "blob" && item.path === preferredPath,
+        ) ??
+        nextTree.find((item: RepoTreeItem) => item.type === "blob") ??
+        null;
       setSelectedRepoFile(firstFile);
       if (firstFile) {
         await loadRepoFile(firstFile, ref, requestKey);
@@ -3245,6 +3698,8 @@ export default function App() {
     setSelectedRepoFile(file);
     setIsCreatingRepoFile(false);
     setRepoNewFilePath("");
+    setAiDraftSummary(null);
+    setActiveAiDraftId(null);
     setLoadingRepoFile(true);
     setRepoFileContent(null);
 
@@ -3283,6 +3738,8 @@ export default function App() {
     setRepoFileContent("");
     setRepoFileDraft("");
     setRepoNewFilePath("");
+    setAiDraftSummary(null);
+    setActiveAiDraftId(null);
     setRepoCommitMessage("Create file");
     setIsCreatingRepoFile(true);
     setIsEditingRepoFile(true);
@@ -3428,6 +3885,8 @@ export default function App() {
 
       setSelectedRepoFile(nextFile);
       setRepoFileContent(repoFileDraft);
+      setAiDraftSummary(null);
+      setActiveAiDraftId(null);
       setRepoNewFilePath("");
       setIsCreatingRepoFile(false);
       setIsEditingRepoFile(false);
@@ -3491,6 +3950,72 @@ export default function App() {
       setWriteError(err instanceof Error ? err.message : "Failed to open pull request.");
     } finally {
       setCreatingRepoPull(false);
+    }
+  };
+
+  const saveRepoPullMetadata = async () => {
+    if (!selectedPull) {
+      setWriteError("Select a pull request before updating it.");
+      return;
+    }
+
+    const title = repoPullTitle.trim();
+    if (!title) {
+      setWriteError("Pull request title is required.");
+      return;
+    }
+
+    setSavingPullMeta(true);
+    setWriteError(null);
+
+    try {
+      const response = await fetch(
+        `/api/pulls/${selectedPull.number}?owner=${currentOwner}&repo=${currentRepo}`,
+        {
+          method: "PATCH",
+          headers: getWriteHeaders(),
+          body: JSON.stringify({
+            title,
+            body: repoPullBody,
+          }),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Pull update failed with ${response.status}`);
+      }
+
+      const nextPull = {
+        ...selectedPull,
+        ...data,
+        labels: data.labels ?? selectedPull.labels,
+      } as PullRequest;
+      selectedPullNumberRef.current = nextPull.number;
+      setSelectedPull(nextPull);
+      setPulls((current) =>
+        orderPullsForStream(current.map((pull) => (pull.number === nextPull.number ? nextPull : pull))),
+      );
+      setSavedPulls((current) =>
+        current.map((pull) =>
+          pull.owner === currentOwner && pull.repo === currentRepo && pull.pull_number === nextPull.number
+            ? {
+                ...pull,
+                title: nextPull.title,
+                html_url: nextPull.html_url,
+                state: nextPull.state,
+                draft: Boolean(nextPull.draft),
+              }
+            : pull,
+        ),
+      );
+      setRepoPullTitle(nextPull.title);
+      setRepoPullBody(nextPull.body ?? "");
+      setRepoPullUrl(nextPull.html_url);
+    } catch (err) {
+      setWriteError(err instanceof Error ? err.message : "Failed to update pull request.");
+    } finally {
+      setSavingPullMeta(false);
     }
   };
 
@@ -3561,13 +4086,14 @@ export default function App() {
   const fetchPulls = async (pageNum = 1, reset = false) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
     const requestedStateFilter = stateFilter;
+    const hasVisiblePulls = pulls.length > 0;
     const isCurrentPullListRequest = () =>
       repoKeyRef.current === requestKey &&
       viewModeRef.current === "pulls" &&
       stateFilterRef.current === requestedStateFilter;
 
     if (pageNum === 1) {
-      setLoading(true);
+      setLoading(!hasVisiblePulls);
       setLoadingMore(false);
     } else {
       setLoadingMore(true);
@@ -3675,8 +4201,10 @@ export default function App() {
 
   const handleSelectPull = async (pull: PullRequest) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
+    setViewMode("pulls");
     selectedPullNumberRef.current = pull.number;
     setSelectedPull(pull);
+    setSelectedBranch(null);
     setLoadingFiles(true);
     setLoadingComments(true);
     setWriteError(null);
@@ -3858,6 +4386,7 @@ export default function App() {
     let refreshQueued = false;
     let isClosed = false;
     let fallbackTimer: number | null = null;
+    let liveHandshakeTimer: number | null = null;
     let socket: WebSocket | null = null;
 
     const refreshLiveData = async () => {
@@ -3881,6 +4410,13 @@ export default function App() {
 
     const startHttpFallback = () => {
       if (isClosed || fallbackTimer) return;
+      if (liveHandshakeTimer) {
+        window.clearTimeout(liveHandshakeTimer);
+        liveHandshakeTimer = null;
+      }
+      if (socket && socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
+        socket.close();
+      }
       void refreshLiveData();
       fallbackTimer = window.setInterval(() => {
         void refreshLiveData();
@@ -3890,9 +4426,12 @@ export default function App() {
     try {
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       socket = new WebSocket(`${protocol}://${window.location.host}/api/live`);
+      liveHandshakeTimer = window.setTimeout(() => {
+        startHttpFallback();
+      }, 3500);
 
       socket.addEventListener("open", () => {
-        if (isClosed || !socket) return;
+        if (isClosed || !socket || fallbackTimer) return;
         socket.send(JSON.stringify({
           type: "subscribe",
           owner: currentOwner,
@@ -3904,6 +4443,13 @@ export default function App() {
       socket.addEventListener("message", (event) => {
         try {
           const message = JSON.parse(event.data);
+          if (message.type === "subscribed") {
+            if (liveHandshakeTimer) {
+              window.clearTimeout(liveHandshakeTimer);
+              liveHandshakeTimer = null;
+            }
+            return;
+          }
           if (message.type !== "refresh") return;
           if (message.owner !== currentOwner || message.repo !== currentRepo) return;
           if (selectedPull && message.pullNumber && message.pullNumber !== selectedPull.number) return;
@@ -3926,6 +4472,9 @@ export default function App() {
 
     return () => {
       isClosed = true;
+      if (liveHandshakeTimer) {
+        window.clearTimeout(liveHandshakeTimer);
+      }
       if (fallbackTimer) {
         window.clearInterval(fallbackTimer);
       }
@@ -4272,7 +4821,10 @@ export default function App() {
                   ? fetchPulls(1, true)
                   : viewMode === "branches"
                     ? fetchBranches()
-                    : fetchRepoTree()
+                    : fetchRepoTree(undefined, {
+                        preservePull: Boolean(selectedPullNumberRef.current && repoTargetBranch.trim()),
+                        preferredPath: selectedFile?.filename ?? selectedRepoFile?.path,
+                      })
               }
               className="p-2 lg:p-2.5 border border-white/[0.05] bg-white/[0.01] hover:border-white/[0.1] hover:bg-white/[0.025] transition-all group shrink-0 rounded-lg"
             >
@@ -4546,7 +5098,7 @@ export default function App() {
                     />
                   </button>
                   {isSidebarSavedPullsOpen && (
-                    <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+                    <div className="max-h-44 space-y-1 overflow-y-auto pr-1 custom-scrollbar">
                       {savedPulls.slice(0, MAX_SAVED_PULLS).map((savedPull) => (
                         <button
                           key={`${savedPull.owner}/${savedPull.repo}#${savedPull.pull_number}`}
@@ -4603,6 +5155,13 @@ export default function App() {
                 <button
                   onClick={() => {
                     setActiveTab("diff");
+                    setRepoTargetBranch("");
+                    setRepoPullUrl(null);
+                    setAiDraftSummary(null);
+                    setActiveAiDraftId(null);
+                    selectedPullNumberRef.current = null;
+                    setSelectedPull(null);
+                    setSelectedBranch(null);
                     setViewMode("code");
                   }}
                   className={cn(
@@ -4612,7 +5171,7 @@ export default function App() {
                       : "text-white/25 hover:text-white/45",
                   )}
                 >
-                  Code
+                  {isPullBranchWorkspace ? "Branch" : "Code"}
                   {viewMode === "code" && (
                     <motion.div
                       layoutId="viewMode"
@@ -4629,7 +5188,7 @@ export default function App() {
                 <div className="flex items-center gap-2 text-white/20">
                   <Activity className="w-3 h-3" />
                   <h2 className="text-[9px] font-bold uppercase tracking-[0.36em]">
-                    {viewMode === "pulls" ? "Stream" : viewMode === "branches" ? "Network" : "Explore"}
+                    {viewMode === "pulls" ? "Stream" : viewMode === "branches" ? "Network" : isPullBranchWorkspace ? "Branch" : "Explore"}
                   </h2>
                 </div>
                 <div className="flex items-center gap-3">
@@ -4711,7 +5270,10 @@ export default function App() {
                         ? fetchPulls(1, true)
                         : viewMode === "branches"
                           ? fetchBranches(1, true)
-                          : fetchRepoTree()
+                          : fetchRepoTree(undefined, {
+                              preservePull: Boolean(selectedPullNumberRef.current && repoTargetBranch.trim()),
+                              preferredPath: selectedFile?.filename ?? selectedRepoFile?.path,
+                            })
                     }
                     className="text-[10px] uppercase tracking-widest text-brand-orange border-b border-brand-orange/20"
                   >
@@ -5003,7 +5565,13 @@ export default function App() {
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 bg-brand-orange" />
                       <span className="text-[9px] uppercase tracking-[0.4em] font-medium opacity-30">
-                        {selectedPull ? "Pull Request" : selectedBranch ? "Branch View" : "Repository Code"}
+                        {isPullBranchWorkspace
+                          ? "PR Branch"
+                          : selectedPull
+                            ? "Pull Request"
+                            : selectedBranch
+                              ? "Branch View"
+                              : "Repository Code"}
                       </span>
                     </div>
                     <h2 className="text-3xl sm:text-4xl lg:text-6xl font-serif italic tracking-tighter leading-[0.95] lg:leading-[0.88] break-words">
@@ -5051,6 +5619,16 @@ export default function App() {
                                 {selectedPullIsSaved ? "Saved" : "Save"}
                               </button>
                             )}
+                            {authUser && selectedPull.state === "open" && (
+                              <button
+                                onClick={workPullBranchInCode}
+                                disabled={!canWorkPullBranchInCode}
+                                className="group flex items-center gap-1.5 rounded-md border border-white/5 px-2 py-1 text-[8px] uppercase tracking-[0.18em] text-white/30 transition-colors hover:border-white/10 hover:text-white/55 disabled:cursor-not-allowed disabled:opacity-30"
+                              >
+                                <Code className="h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
+                                Edit Branch
+                              </button>
+                            )}
                           </div>
                         )}
                         {selectedPull && (
@@ -5094,7 +5672,9 @@ export default function App() {
 
                       <div className="space-y-1">
                         <p className="text-sm font-serif italic opacity-40">
-                          {selectedPull
+                          {isPullBranchWorkspace
+                            ? `Editing ${repoFiles.length.toLocaleString()} files on ${repoTargetBranch}`
+                            : selectedPull
                             ? new Date(
                                 selectedPull.created_at,
                               ).toLocaleDateString()
@@ -5142,7 +5722,7 @@ export default function App() {
                         />
                       )}
                     </button>
-                    {selectedPull && (
+                    {selectedPull && !isPullBranchWorkspace && (
                       <button
                         onClick={() => setActiveTab("discussion")}
                         className={cn(
@@ -5166,7 +5746,7 @@ export default function App() {
                         )}
                       </button>
                     )}
-                    {selectedPull && checkRuns.length > 0 && (
+                    {selectedPull && !isPullBranchWorkspace && checkRuns.length > 0 && (
                       <button
                         onClick={() => setActiveTab("checks")}
                         className={cn(
@@ -5215,16 +5795,16 @@ export default function App() {
                   {viewMode === "code" ? (
                     <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                        <div className={cn("flex items-center justify-between border-b border-white/5 pb-3", isFullscreen && "mx-auto max-w-7xl")}>
                           <h3 className="text-[10px] font-medium uppercase tracking-[0.2em] text-white/40">
-                            Repository Files
+                            {isPullBranchWorkspace ? "Branch Files" : "Repository Files"}
                           </h3>
                           <span className="text-[10px] font-mono text-white/10">
-                            {visibleRepoFiles.length}
+                            {repoFilesCountLabel}
                           </span>
                         </div>
                         <div className="flex max-h-[300px] flex-col overflow-y-auto rounded-xl border border-white/5 bg-onyx/40 lg:max-h-[600px] custom-scrollbar">
-                          {visibleRepoFiles.slice(0, 120).map((file) => (
+                          {visibleRepoFiles.map((file) => (
                             <button
                               key={file.path}
                               onClick={() => loadRepoFile(file)}
@@ -5269,7 +5849,7 @@ export default function App() {
                           <div className="flex items-center gap-2 text-white/20">
                             <Code className="w-3 h-3" />
                             <h3 className="text-[9px] font-bold uppercase tracking-[0.4em]">
-                              Repository Buffer
+                              {isPullBranchWorkspace ? "Branch Buffer" : "Repository Buffer"}
                             </h3>
                           </div>
                           <div className="flex items-center gap-4">
@@ -5284,7 +5864,7 @@ export default function App() {
                                 New File
                               </button>
                             )}
-                            {authUser && (selectedRepoFile || isCreatingRepoFile) && repoFileContent != null && (
+                            {authUser && !isRepoBufferLoading && (selectedRepoFile || isCreatingRepoFile) && repoFileContent != null && (
                               <button
                                 onClick={() => {
                                   setWriteError(null);
@@ -5323,8 +5903,8 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className={cn("relative overflow-hidden rounded-xl border border-white/5 bg-panel", isFullscreen && "max-w-7xl mx-auto")}>
-                          {loadingRepoTree || loadingRepoFile ? (
+                        <div className={cn("relative overflow-hidden rounded-xl border border-white/[0.035] bg-white/[0.01]", isFullscreen && "max-w-7xl mx-auto")}>
+                          {isRepoBufferLoading ? (
                             <div className="flex flex-col items-center justify-center space-y-4 p-14 text-center lg:p-20">
                               <div className="h-1.5 w-1.5 animate-pulse bg-brand-orange" />
                               <p className="text-[9px] font-medium uppercase tracking-[0.5em] text-brand-orange/40">
@@ -5345,11 +5925,11 @@ export default function App() {
                                   value={repoFileDraft}
                                   onChange={(event) => setRepoFileDraft(event.target.value)}
                                   spellCheck={false}
-                                  className="min-h-[520px] w-full resize-none bg-onyx/40 p-4 font-mono text-[10px] leading-relaxed text-white/70 outline-none sm:p-5 sm:text-xs lg:p-6"
+                                  className="min-h-[520px] w-full resize-none bg-transparent p-4 font-mono text-[10px] leading-relaxed text-white/70 outline-none custom-scrollbar sm:p-5 sm:text-xs lg:p-6"
                                 />
                               ) : (
                                 <pre
-                                  className="code-view-highlight w-fit min-w-full whitespace-pre p-4 text-[10px] leading-relaxed text-white/60 !m-0 !bg-onyx/40 sm:p-5 sm:text-xs lg:p-6"
+                                  className="code-view-highlight w-fit min-w-full whitespace-pre p-4 text-[10px] leading-relaxed text-white/60 !m-0 !bg-transparent sm:p-5 sm:text-xs lg:p-6"
                                   dangerouslySetInnerHTML={{
                                     __html:
                                       highlightedRepoFileContent ??
@@ -5364,8 +5944,25 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                        {isEditingRepoFile && (
-                          <div className="space-y-3 rounded-xl border border-white/5 bg-white/[0.012] p-4">
+                        {!isRepoBufferLoading && isEditingRepoFile && (
+                          <div className={cn("space-y-3 rounded-xl border border-white/[0.035] bg-white/[0.008] p-4", isFullscreen && "mx-auto max-w-7xl")}>
+                            {aiDraftSummary && (
+                              <div className="flex flex-col gap-2 rounded-lg border border-white/[0.04] bg-white/[0.018] px-3 py-2 text-[10px] leading-relaxed text-white/35 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="flex min-w-0 items-start gap-2">
+                                  <Sparkles className="mt-0.5 h-2.5 w-2.5 shrink-0 text-white/16" />
+                                  <span>{aiDraftSummary}</span>
+                                </div>
+                                {activeAiDraftId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteAiDraft()}
+                                    className="self-start text-[8px] font-medium uppercase tracking-[0.18em] text-white/18 transition-colors hover:text-rose-300/70"
+                                  >
+                                    Delete Draft
+                                  </button>
+                                )}
+                              </div>
+                            )}
                             {isCreatingRepoFile && (
                               <input
                                 value={repoNewFilePath}
@@ -5382,7 +5979,7 @@ export default function App() {
                                 className="w-full rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
                               />
                             )}
-                            <div className="flex flex-col gap-3 sm:flex-row">
+                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_8rem]">
                               <input
                                 value={repoCommitMessage}
                                 onChange={(event) => setRepoCommitMessage(event.target.value)}
@@ -5392,32 +5989,34 @@ export default function App() {
                               <button
                                 onClick={commitRepoFile}
                                 disabled={committingRepoFile || !canCommitRepoFile}
-                                className="rounded-lg border border-brand-orange/25 bg-brand-orange/10 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange transition-colors hover:bg-brand-orange/15 disabled:cursor-not-allowed disabled:opacity-35"
+                                className="rounded-lg border border-brand-orange/20 bg-brand-orange/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange/80 transition-colors hover:bg-brand-orange/10 hover:text-brand-orange disabled:cursor-not-allowed disabled:opacity-35"
                               >
-                                {committingRepoFile ? "Committing" : `Commit to ${activeRepoRef}`}
+                                {committingRepoFile ? "Committing" : "Commit"}
                               </button>
                             </div>
                             <p className="text-[9px] uppercase tracking-[0.16em] text-white/20">
                               Commits use your signed-in GitHub account. Target: {repoTargetBranch || repoInfo?.default_branch || "branch"}.
                             </p>
-                            <div className="grid gap-3 border-t border-white/[0.04] pt-3 lg:grid-cols-[1fr_auto]">
-                              <input
-                                value={repoNewBranchName}
-                                onChange={(event) => setRepoNewBranchName(event.target.value)}
-                                placeholder="new branch name"
-                                className="min-w-0 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
-                              />
-                              <button
-                                onClick={createRepoBranch}
-                                disabled={creatingRepoBranch || !repoNewBranchName.trim()}
-                                className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/35 transition-colors hover:bg-white/[0.04] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-30"
-                              >
-                                {creatingRepoBranch ? "Creating" : "Create Branch"}
-                              </button>
-                            </div>
+                            {!isPullBranchWorkspace && (
+                              <div className="grid gap-3 border-t border-white/[0.04] pt-3 lg:grid-cols-[1fr_auto]">
+                                <input
+                                  value={repoNewBranchName}
+                                  onChange={(event) => setRepoNewBranchName(event.target.value)}
+                                  placeholder="new branch name"
+                                  className="min-w-0 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                                />
+                                <button
+                                  onClick={createRepoBranch}
+                                  disabled={creatingRepoBranch || !repoNewBranchName.trim()}
+                                  className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/35 transition-colors hover:bg-white/[0.04] hover:text-white/60 disabled:cursor-not-allowed disabled:opacity-30"
+                                >
+                                  {creatingRepoBranch ? "Creating" : "Create Branch"}
+                                </button>
+                              </div>
+                            )}
                             {(repoTargetBranch && repoTargetBranch !== repoInfo?.default_branch) && (
                               <div className="space-y-3 border-t border-white/[0.04] pt-3">
-                                <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_8rem]">
                                   <input
                                     value={repoPullTitle}
                                     onChange={(event) => setRepoPullTitle(event.target.value)}
@@ -5425,27 +6024,32 @@ export default function App() {
                                     className="min-w-0 rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono text-white/65 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
                                   />
                                   <button
-                                    onClick={createRepoPullRequest}
-                                    disabled={creatingRepoPull || !repoPullTitle.trim()}
-                                    className="rounded-lg border border-brand-orange/20 bg-brand-orange/5 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-orange/80 transition-colors hover:bg-brand-orange/10 disabled:cursor-not-allowed disabled:opacity-35"
+                                    onClick={repoPullUrl ? saveRepoPullMetadata : createRepoPullRequest}
+                                    disabled={
+                                      repoPullUrl
+                                        ? savingPullMeta || !repoPullTitle.trim()
+                                        : creatingRepoPull || !repoPullTitle.trim()
+                                    }
+                                    className="rounded-lg border border-white/8 bg-white/[0.015] px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-white/32 transition-colors hover:bg-white/[0.035] hover:text-white/58 disabled:cursor-not-allowed disabled:opacity-30"
                                   >
-                                    {creatingRepoPull ? "Opening" : "Open PR"}
+                                    {repoPullUrl ? (savingPullMeta ? "Saving" : "Save PR") : creatingRepoPull ? "Opening" : "Open PR"}
                                   </button>
                                 </div>
                                 <textarea
                                   value={repoPullBody}
                                   onChange={(event) => setRepoPullBody(event.target.value)}
                                   placeholder="Pull request body"
-                                  className="min-h-20 w-full resize-y rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono leading-relaxed text-white/60 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
+                                  className="min-h-20 w-full resize-none rounded-lg border border-white/5 bg-black/20 px-3 py-2.5 text-[10px] font-mono leading-relaxed text-white/60 outline-none transition-colors placeholder:text-white/16 focus:border-white/10"
                                 />
                                 {repoPullUrl && (
                                   <a
                                     href={repoPullUrl}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-brand-orange/70 transition-colors hover:text-brand-orange"
+                                    className="group inline-flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-white/22 transition-colors hover:text-white/50"
                                   >
-                                    View pull request <ExternalLink className="h-3 w-3" />
+                                    View pull request
+                                    <ExternalLink className="h-3 w-3 transition-transform duration-300 ease-out group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:scale-[1.04]" />
                                   </a>
                                 )}
                               </div>
@@ -5617,7 +6221,7 @@ export default function App() {
                         </div>
 
                         <div className={cn("relative", isFullscreen && "max-w-7xl mx-auto")}>
-                          <div className="relative bg-panel border border-white/5 overflow-hidden rounded-xl">
+                          <div className="relative overflow-hidden rounded-xl border border-white/[0.035] bg-white/[0.01]">
                             {loadingFiles ? (
                               <div className="p-14 lg:p-20 flex flex-col items-center justify-center space-y-4 text-center">
                                 <div className="w-1.5 h-1.5 bg-brand-orange animate-pulse" />
@@ -5940,7 +6544,7 @@ export default function App() {
                                 value={newReviewBody}
                                 onChange={(event) => setNewReviewBody(event.target.value)}
                                 placeholder="Add a review summary"
-                                className="min-h-[96px] w-full resize-y rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                              className="min-h-[96px] w-full resize-none rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
                               />
                               <div className="flex flex-wrap items-center justify-end gap-2">
                                 <button
@@ -5984,7 +6588,7 @@ export default function App() {
                               value={newCommentBody}
                               onChange={(event) => setNewCommentBody(event.target.value)}
                               placeholder="Add a pull request comment"
-                              className="min-h-[120px] w-full resize-y rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                              className="min-h-[120px] w-full resize-none rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
                             />
                             <div className="flex items-center justify-end">
                                 <button
@@ -5994,10 +6598,10 @@ export default function App() {
                                   !githubProviderToken ||
                                   !newCommentBody.trim()
                                 }
-                                className="inline-flex items-center gap-2 rounded-lg border border-white/8 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/40 transition-colors hover:border-brand-orange/20 hover:text-brand-orange disabled:cursor-not-allowed disabled:opacity-35"
+                                className="group/action inline-flex items-center gap-2 rounded-lg border border-white/8 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/40 transition-colors hover:border-brand-orange/20 hover:text-brand-orange disabled:cursor-not-allowed disabled:opacity-35"
                               >
                                 {submittingComment ? "Publishing" : "Publish Comment"}
-                                <ArrowRight className="h-3 w-3" />
+                                <ArrowRight className="h-3 w-3 transition-transform duration-300 ease-out group-hover/action:translate-x-0.5 group-hover/action:scale-[1.04]" />
                               </button>
                             </div>
                           </div>
@@ -6030,7 +6634,7 @@ export default function App() {
                                         setReviewCommentLine(event.target.value)
                                       }
                                       placeholder="Target line"
-                                      className="rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                                      className="quiet-number-input rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
                                     />
                                     <input
                                       type="number"
@@ -6040,7 +6644,7 @@ export default function App() {
                                         setReviewCommentStartLine(event.target.value)
                                       }
                                       placeholder="Start line (optional range)"
-                                      className="rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                                      className="quiet-number-input rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
                                     />
                                   </div>
                                   <textarea
@@ -6049,7 +6653,7 @@ export default function App() {
                                       setNewReviewCommentBody(event.target.value)
                                     }
                                     placeholder="Add an inline review comment"
-                                    className="min-h-[120px] w-full resize-y rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
+                                    className="min-h-[120px] w-full resize-none rounded-xl border border-white/8 bg-black/20 px-4 py-3 text-sm text-white/75 outline-none transition-colors placeholder:text-white/15 focus:border-brand-orange/30"
                                   />
                                   {availableReviewLines.length > 0 && (
                                     <div className="text-[9px] font-mono text-white/20">
@@ -6066,12 +6670,12 @@ export default function App() {
                                         !newReviewCommentBody.trim() ||
                                         !reviewCommentLine.trim()
                                       }
-                                      className="inline-flex items-center gap-2 rounded-lg border border-white/8 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/40 transition-colors hover:border-brand-orange/20 hover:text-brand-orange disabled:cursor-not-allowed disabled:opacity-35"
+                                      className="group/action inline-flex items-center gap-2 rounded-lg border border-white/8 px-3 py-2 text-[9px] font-medium uppercase tracking-[0.22em] text-white/40 transition-colors hover:border-brand-orange/20 hover:text-brand-orange disabled:cursor-not-allowed disabled:opacity-35"
                                     >
                                       {submittingReviewComment
                                         ? "Publishing"
                                         : "Publish Review Comment"}
-                                      <ArrowRight className="h-3 w-3" />
+                                      <ArrowRight className="h-3 w-3 transition-transform duration-300 ease-out group-hover/action:translate-x-0.5 group-hover/action:scale-[1.04]" />
                                     </button>
                                   </div>
                                 </>
@@ -6135,6 +6739,26 @@ export default function App() {
                         </section>
                       )}
 
+                      {selectedPull?.state === "open" && !loadingComments && eligibleDraftFixComments.length === 0 && (
+                        <section className="space-y-3 border-t border-white/5 pt-6">
+                          <div className="flex items-center gap-2 text-white/22">
+                            <Sparkles className="h-2.5 w-2.5 text-white/16" />
+                            <h3 className="text-[10px] font-medium uppercase tracking-[0.2em]">
+                              Draft Fix
+                            </h3>
+                          </div>
+                          <p className="max-w-xl text-[10px] leading-relaxed text-white/24">
+                            Draft Fix appears on file annotations. This PR has no file annotation to draft from.
+                          </p>
+                        </section>
+                      )}
+
+                      {writeError && (
+                        <div className="rounded-lg border border-rose-400/10 bg-rose-400/[0.03] px-3 py-2 text-[9px] uppercase tracking-[0.16em] text-rose-400/70">
+                          {writeError}
+                        </div>
+                      )}
+
                       {/* Review Comments */}
                       {reviewComments.length > 0 && (
                         <section className="space-y-8">
@@ -6147,6 +6771,7 @@ export default function App() {
                             {reviewComments.map((comment) => {
                               const line = comment.line || comment.original_line;
                               const startLine = comment.start_line || comment.original_start_line;
+                              const savedDraft = findSavedAiDraft(comment);
 
                               return (
                               <div
@@ -6174,10 +6799,29 @@ export default function App() {
                                   {comment.path && line && (
                                     <button
                                       onClick={() => navigateToComment(comment.path!, line, startLine)}
-                                      className="inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] leading-none text-white/18 transition-colors hover:text-brand-orange"
+                                      className="group/action inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] leading-none text-white/18 transition-colors hover:text-brand-orange"
                                     >
                                       Open in Diff
-                                      <ArrowRight className="w-2.5 h-2.5" />
+                                      <ArrowRight className="w-2.5 h-2.5 transition-transform duration-300 ease-out group-hover/action:translate-x-0.5 group-hover/action:scale-[1.04]" />
+                                    </button>
+                                  )}
+                                  {comment.path && authUser && (
+                                    <button
+                                      onClick={() => draftReviewFixWithGemini(comment)}
+                                      disabled={
+                                        selectedPull?.state !== "open" ||
+                                        draftingReviewFix !== null ||
+                                        (!savedDraft && !githubProviderToken) ||
+                                        !canWorkPullBranchInCode
+                                      }
+                                      className="group/action inline-flex items-center gap-1 text-[7px] font-medium uppercase tracking-[0.18em] leading-none text-white/18 transition-colors hover:text-white/55 disabled:cursor-not-allowed disabled:opacity-30"
+                                    >
+                                      {draftingReviewFix === comment.id
+                                        ? "Drafting"
+                                        : savedDraft
+                                          ? "Open Draft"
+                                          : "Draft Fix"}
+                                      <Sparkles className="h-2 w-2 text-white/20 transition-transform duration-300 ease-out group-hover/action:-translate-y-px group-hover/action:scale-[1.03] group-hover/action:text-white/38" />
                                     </button>
                                   )}
                                 </div>
@@ -6698,11 +7342,11 @@ export default function App() {
 
               <div className="flex-1 space-y-2.5 overflow-y-auto px-5 py-4 sm:px-5 custom-scrollbar">
                 <p className="text-[13px] leading-relaxed text-white/50">
-                  DIFF uses GitHub sign-in to read PRs, sync preferences, and make chosen GitHub writes.
+                  DIFF uses GitHub sign-in for PR access, synced preferences, and actions you choose.
                 </p>
 
                 <p className="text-[11px] leading-relaxed text-white/30">
-                  Writes include comments, reviews, files, branches, PR actions, and labels.
+                  Writes use your GitHub account. Optional drafts may use Gemini and stay saved until deleted.
                 </p>
 
                 <div className="flex flex-wrap gap-4 pt-0.5 text-[9px] font-medium uppercase tracking-[0.16em]">
