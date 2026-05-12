@@ -8,6 +8,18 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.7.1",
+    title: "UI Cleanup",
+    description: "Links, filters, and loading states are quieter.",
+    category: "fix",
+    details: [
+      "Shorten GitHub issue links in comments",
+      "Show saved pull filters faster",
+      "Remove loud loading messages",
+      "Simplify README, sign-in, and update text"
+    ]
+  },
+  {
     version: "0.7.0",
     title: "Review Drafts",
     description: "Draft fixes and branch edits work more calmly.",
