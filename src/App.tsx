@@ -4305,7 +4305,27 @@ export default function App() {
     setActiveTab("diff");
     try {
       const readHeaders = getReadHeaders();
-      const [pullRes, filesRes, commentsRes, reviewCommentsRes, checksRes, commitsRes, reviewsRes, timelineRes, editsRes] = await Promise.all([
+      const checksRequest = fetch(
+        `/api/pulls/${pull.number}/checks?owner=${currentOwner}&repo=${currentRepo}`,
+        { headers: readHeaders },
+      )
+        .then(async (checksRes) => {
+          if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pull.number) return;
+          if (!checksRes.ok) return;
+          const data = await checksRes.json();
+          if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pull.number) return;
+          setCheckRuns(data.check_runs || []);
+          setCheckSummary({
+            mergeable: data.mergeable,
+            merge_state_status: data.merge_state_status,
+          });
+        })
+        .catch((err) => {
+          if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pull.number) return;
+          console.error("PR checks fetch error:", err);
+        });
+
+      const [pullRes, filesRes, commentsRes, reviewCommentsRes, commitsRes, reviewsRes, timelineRes, editsRes] = await Promise.all([
         fetch(
           `/api/pulls/${pull.number}?owner=${currentOwner}&repo=${currentRepo}`,
           { headers: readHeaders },
@@ -4320,10 +4340,6 @@ export default function App() {
         ),
         fetch(
           `/api/pulls/${pull.number}/review-comments?owner=${currentOwner}&repo=${currentRepo}`,
-          { headers: readHeaders },
-        ),
-        fetch(
-          `/api/pulls/${pull.number}/checks?owner=${currentOwner}&repo=${currentRepo}`,
           { headers: readHeaders },
         ),
         fetch(
@@ -4372,15 +4388,7 @@ export default function App() {
       if (timelineRes.ok) setTimelineEvents(await timelineRes.json());
       if (editsRes.ok) setContentEdits(await editsRes.json());
 
-      // Process Checks
-      if (checksRes.ok) {
-        const data = await checksRes.json();
-        setCheckRuns(data.check_runs || []);
-        setCheckSummary({
-          mergeable: data.mergeable,
-          merge_state_status: data.merge_state_status,
-        });
-      }
+      await checksRequest;
     } catch (err) {
       if (repoKeyRef.current !== requestKey || selectedPullNumberRef.current !== pull.number) return;
       console.error("PR data fetch error:", err);
@@ -5571,7 +5579,7 @@ export default function App() {
                           )}
                         </div>
                         <span className="text-[10px] font-bold uppercase tracking-[0.4em] opacity-40 group-hover:opacity-100 transition-opacity">
-                          {loadingMore ? "Loading..." : "Load More"}
+                          Load More
                         </span>
                       </button>
                     </div>
@@ -5712,13 +5720,15 @@ export default function App() {
                           <div className="w-[1px] h-8 bg-white/10 hidden sm:block" />
                         )}
 
-                        {selectedPull && checkRuns.length > 0 && (
+                        {selectedPull && !isPullBranchWorkspace && (
                           <>
                             <button
                               onClick={() => setActiveTab("checks")}
                               className="flex items-center gap-2 hover:bg-white/5 p-1 -m-1 transition-all rounded group"
                             >
-                              {checkStats.failure > 0 ? (
+                              {checkRuns.length === 0 ? (
+                                <Circle className="h-5 w-5 text-white/15 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
+                              ) : checkStats.failure > 0 ? (
                                 <XCircle className="h-5 w-5 text-rose-500 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
                               ) : checkStats.cancelled > 0 ? (
                                 <CircleSlash className="h-5 w-5 text-orange-500 transition-transform duration-300 ease-out group-hover:-translate-y-px group-hover:scale-[1.04]" />
@@ -5732,15 +5742,19 @@ export default function App() {
 
                               <div className="flex flex-col text-left">
                                 <span className="text-[8px] uppercase tracking-widest opacity-40 font-bold group-hover:opacity-60">Checks</span>
-                                <span className={cn(
-                                  "text-[10px] font-mono",
-                                  checkRuns.every(r => r.conclusion === "success" || r.conclusion === "skipped") ? "text-emerald-500" :
-                                  checkRuns.some(r => r.conclusion === "failure" || r.conclusion === "timed_out" || r.conclusion === "startup_failure") ? "text-rose-500" :
-                                  checkRuns.some(r => r.conclusion === "cancelled") ? "text-orange-500" :
-                                  "text-amber-500"
-                                )}>
-                                  {checkStats.success}/{checkRuns.length} Passed
-                                </span>
+                                {checkRuns.length > 0 ? (
+                                  <span className={cn(
+                                    "text-[10px] font-mono",
+                                    checkRuns.every(r => r.conclusion === "success" || r.conclusion === "skipped") ? "text-emerald-500" :
+                                    checkRuns.some(r => r.conclusion === "failure" || r.conclusion === "timed_out" || r.conclusion === "startup_failure") ? "text-rose-500" :
+                                    checkRuns.some(r => r.conclusion === "cancelled") ? "text-orange-500" :
+                                    "text-amber-500"
+                                  )}>
+                                    {checkStats.success}/{checkRuns.length} Passed
+                                  </span>
+                                ) : (
+                                  <span className="h-[1em] text-[10px] font-mono text-white/10" aria-hidden="true">&nbsp;</span>
+                                )}
                             </div>
                           </button>
                           <div className="w-[1px] h-8 bg-white/10 hidden sm:block" />
@@ -5823,7 +5837,7 @@ export default function App() {
                         )}
                       </button>
                     )}
-                    {selectedPull && !isPullBranchWorkspace && checkRuns.length > 0 && (
+                    {selectedPull && !isPullBranchWorkspace && (
                       <button
                         onClick={() => setActiveTab("checks")}
                         className={cn(
@@ -5834,9 +5848,11 @@ export default function App() {
                         )}
                       >
                         Checks
-                        <span className="text-brand-orange/60 text-[7px] sm:text-[8px] font-mono opacity-80">
-                          ({checkRuns.length})
-                        </span>
+                        {checkRuns.length > 0 && (
+                          <span className="text-brand-orange/60 text-[7px] sm:text-[8px] font-mono opacity-80">
+                            ({checkRuns.length})
+                          </span>
+                        )}
                         {activeTab === "checks" && (
                           <motion.div
                             layoutId="activeTab"
@@ -5982,12 +5998,7 @@ export default function App() {
 
                         <div className={cn("relative overflow-hidden rounded-xl border border-white/[0.035] bg-white/[0.01]", isFullscreen && "max-w-7xl mx-auto")}>
                           {isRepoBufferLoading ? (
-                            <div className="flex flex-col items-center justify-center space-y-4 p-14 text-center lg:p-20">
-                              <div className="h-1.5 w-1.5 animate-pulse bg-brand-orange" />
-                              <p className="text-[9px] font-medium uppercase tracking-[0.5em] text-brand-orange/40">
-                                Reading Repository...
-                              </p>
-                            </div>
+                            <div className="min-h-36 p-14 lg:p-20" aria-busy="true" aria-label="Loading file" />
                           ) : (
                             <div
                               className={cn(
@@ -6204,7 +6215,9 @@ export default function App() {
                           </span>
                         </div>
                         <div className="flex flex-col border border-white/5 bg-onyx/40 max-h-[300px] lg:max-h-[600px] overflow-y-auto custom-scrollbar rounded-xl">
-                          {files.length > 0 ? (
+                          {loadingFiles ? (
+                            <div className="min-h-28" aria-busy="true" aria-label="Loading files" />
+                          ) : files.length > 0 ? (
                             files.map((file) => (
                               <button
                                 key={file.filename}

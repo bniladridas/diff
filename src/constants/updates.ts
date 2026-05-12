@@ -8,6 +8,18 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.7.2",
+    title: "Loading Cleanup",
+    description: "PR screens stay steady while data loads.",
+    category: "fix",
+    details: [
+      "Keep the Checks area in place",
+      "Hide noisy loading text",
+      "Show empty file text only after loading",
+      "Shorten an older mobile update note"
+    ]
+  },
+  {
     version: "0.7.1",
     title: "UI Cleanup",
     description: "Links, filters, and loading states are quieter.",
@@ -132,7 +144,7 @@ export const APP_UPDATES: AppUpdate[] = [
     category: "fix",
     details: [
       "Review comments can jump back to the diff line",
-      "Mobile review markdown wraps long links and inline code without horizontal scroll",
+      "Long review links wrap on mobile",
       "Review gutters stay aligned on mobile"
     ]
   },
