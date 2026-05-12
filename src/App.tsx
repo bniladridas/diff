@@ -124,6 +124,8 @@ interface GithubComment {
   original_position?: number;
 }
 
+type PullStateFilter = "open" | "closed" | "all";
+
 interface ChangedFile {
   sha: string;
   filename: string;
@@ -664,16 +666,43 @@ const renderTextWithSoftBreaks = (text: string) =>
     ),
   );
 
+const getGithubIssueLinkLabel = (href?: string, label?: string) => {
+  if (!href) return null;
+  try {
+    const url = new URL(href);
+    if (url.hostname !== "github.com") return null;
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length < 4) return null;
+    const [owner, repo, type, number] = parts;
+    if (type !== "issues" && type !== "pulls" && type !== "pull") return null;
+    if (!/^\d+$/.test(number)) return null;
+
+    const normalizedHref = url.toString().replace(/\/$/, "");
+    const normalizedLabel = (label ?? "").trim().replace(/\/$/, "");
+    const shouldShorten =
+      !normalizedLabel ||
+      normalizedLabel === normalizedHref ||
+      normalizedLabel === href.replace(/\/$/, "");
+
+    return shouldShorten ? `${owner}/${repo}#${number}` : null;
+  } catch {
+    return null;
+  }
+};
+
 const markdownComponents = {
   a({
     children,
     ...props
   }: AnchorHTMLAttributes<HTMLAnchorElement> & { children?: ReactNode }) {
+    const label = getTextContent(children).trim();
+    const githubIssueLabel = getGithubIssueLinkLabel(props.href, label);
     return (
       <a {...props}>
-        {Children.map(children, (child) =>
-          typeof child === "string" ? renderTextWithSoftBreaks(child) : child,
-        )}
+        {githubIssueLabel ??
+          Children.map(children, (child) =>
+            typeof child === "string" ? renderTextWithSoftBreaks(child) : child,
+          )}
       </a>
     );
   },
@@ -1079,7 +1108,7 @@ export default function App() {
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isStreamFocus, setIsStreamFocus] = useState(false);
-  const [stateFilter, setStateFilter] = useState<"open" | "closed" | "all">(
+  const [stateFilter, setStateFilter] = useState<PullStateFilter>(
     "open",
   );
   const [theme, setTheme] = useState<ThemePreference>(readStoredTheme);
@@ -1150,6 +1179,17 @@ export default function App() {
       ai_drafts?: AiDraftPreference[];
     };
   } | null>(null);
+  const pullCacheRef = useRef<Record<PullStateFilter, PullRequest[]>>({
+    open: [],
+    closed: [],
+    all: [],
+  });
+  const pullCacheLoadedRef = useRef<Partial<Record<PullStateFilter, boolean>>>({});
+  const pullHasMoreCacheRef = useRef<Record<PullStateFilter, boolean>>({
+    open: false,
+    closed: false,
+    all: false,
+  });
   const preferenceSyncChainRef = useRef(Promise.resolve());
   const preferenceSyncSequenceRef = useRef(0);
   const preferenceSyncPendingCountRef = useRef(0);
@@ -2271,7 +2311,13 @@ export default function App() {
             </p>
           </div>
           <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30">
-            <ReactMarkdown>{event.data.body}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeRaw, rehypeSanitize]}
+              components={markdownComponents}
+            >
+              {event.data.body}
+            </ReactMarkdown>
           </div>
           {isReviewComment && event.data.path && (
             <button
@@ -2368,7 +2414,13 @@ export default function App() {
               </p>
             ) : timelineEvent.body?.trim() ? (
               <div className="markdown-body prose prose-invert prose-xs max-w-none text-white/30 text-[11px]">
-                <ReactMarkdown>{timelineEvent.body}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                  components={markdownComponents}
+                >
+                  {timelineEvent.body}
+                </ReactMarkdown>
               </div>
             ) : null}
           </div>
@@ -3106,6 +3158,9 @@ export default function App() {
     setRepoPullUrl(null);
     setRepoSearchQuery("");
     setPulls([]);
+    pullCacheRef.current = { open: [], closed: [], all: [] };
+    pullCacheLoadedRef.current = {};
+    pullHasMoreCacheRef.current = { open: false, closed: false, all: false };
     selectedPullNumberRef.current = null;
     setSelectedPull(null);
     setFiles([]);
@@ -4083,6 +4138,18 @@ export default function App() {
     }
   };
 
+  const clearSelectedPullData = () => {
+    selectedPullNumberRef.current = null;
+    setSelectedPull(null);
+    setFiles([]);
+    setSelectedFile(null);
+    setComments([]);
+    setReviewComments([]);
+    setTimelineEvents([]);
+    setContentEdits([]);
+    setCheckSummary(null);
+  };
+
   const fetchPulls = async (pageNum = 1, reset = false) => {
     const requestKey = `${currentOwner}/${currentRepo}`;
     const requestedStateFilter = stateFilter;
@@ -4116,19 +4183,14 @@ export default function App() {
         const errorData = await response.json().catch(() => ({}));
         if (response.status === 404 && repoInfo) {
           const newPulls: PullRequest[] = reset ? [] : orderPullsForStream(pulls);
+          pullCacheRef.current[requestedStateFilter] = newPulls;
+          pullCacheLoadedRef.current[requestedStateFilter] = true;
+          pullHasMoreCacheRef.current[requestedStateFilter] = false;
           setPulls(newPulls);
           setHasMore(false);
 
           if (reset) {
-            selectedPullNumberRef.current = null;
-            setSelectedPull(null);
-            setFiles([]);
-            setSelectedFile(null);
-            setComments([]);
-            setReviewComments([]);
-            setTimelineEvents([]);
-            setContentEdits([]);
-            setCheckSummary(null);
+            clearSelectedPullData();
           }
           return;
         }
@@ -4150,6 +4212,9 @@ export default function App() {
       if (!isCurrentPullListRequest()) return;
 
       const newPulls = orderPullsForStream(reset ? data : [...pulls, ...data]);
+      pullCacheRef.current[requestedStateFilter] = newPulls;
+      pullCacheLoadedRef.current[requestedStateFilter] = true;
+      pullHasMoreCacheRef.current[requestedStateFilter] = data.length === 30;
       setPulls(newPulls);
       setHasMore(data.length === 30);
 
@@ -4166,15 +4231,7 @@ export default function App() {
           }
         } else {
           if (!shouldKeepPendingSelection) {
-            selectedPullNumberRef.current = null;
-            setSelectedPull(null);
-            setFiles([]);
-            setSelectedFile(null);
-            setComments([]);
-            setReviewComments([]);
-            setTimelineEvents([]);
-            setContentEdits([]);
-            setCheckSummary(null);
+            clearSelectedPullData();
           }
         }
       }
@@ -4187,6 +4244,31 @@ export default function App() {
         setLoadingMore(false);
       }
     }
+  };
+
+  const changeStateFilter = (nextFilter: PullStateFilter) => {
+    if (nextFilter === stateFilter) return;
+
+    setPage(1);
+    setError(null);
+    setLoadingMore(false);
+    setStateFilter(nextFilter);
+
+    if (pullCacheLoadedRef.current[nextFilter]) {
+      const cachedPulls = pullCacheRef.current[nextFilter];
+      setPulls(cachedPulls);
+      setHasMore(pullHasMoreCacheRef.current[nextFilter]);
+      if (cachedPulls[0]) {
+        handleSelectPull(cachedPulls[0]);
+      } else {
+        clearSelectedPullData();
+      }
+      return;
+    }
+
+    setPulls([]);
+    setHasMore(false);
+    clearSelectedPullData();
   };
 
   const loadMore = () => {
@@ -5225,7 +5307,7 @@ export default function App() {
                   {(["open", "closed", "all"] as const).map((s) => (
                     <button
                       key={s}
-                      onClick={() => setStateFilter(s)}
+                      onClick={() => changeStateFilter(s)}
                       className={cn(
                         "flex-1 py-1.5 text-[8px] lg:text-[10px] uppercase tracking-[0.22em] font-bold transition-all rounded-lg",
                         stateFilter === s
@@ -5255,12 +5337,7 @@ export default function App() {
 
             <div className="flex-1 overflow-y-auto custom-scrollbar">
               {loading ? (
-                <div className="p-12 flex flex-col items-center justify-center space-y-4">
-                  <div className="w-8 h-8 border-2 border-brand-orange/20 border-t-brand-orange animate-spin" />
-                  <p className="text-[10px] uppercase tracking-[0.2em] opacity-20">
-                    Syncing GitHub...
-                  </p>
-                </div>
+                <div className="h-10" aria-busy="true" aria-label="Loading" />
               ) : error ? (
                 <div className="p-12 text-center space-y-4">
                   <p className="text-xs text-rose-500 font-mono">{error}</p>
@@ -6223,12 +6300,7 @@ export default function App() {
                         <div className={cn("relative", isFullscreen && "max-w-7xl mx-auto")}>
                           <div className="relative overflow-hidden rounded-xl border border-white/[0.035] bg-white/[0.01]">
                             {loadingFiles ? (
-                              <div className="p-14 lg:p-20 flex flex-col items-center justify-center space-y-4 text-center">
-                                <div className="w-1.5 h-1.5 bg-brand-orange animate-pulse" />
-                                <p className="text-[9px] uppercase tracking-[0.5em] text-brand-orange/40 font-medium">
-                                  Decoding Diff Stream...
-                                </p>
-                              </div>
+                              <div className="min-h-36" aria-busy="true" aria-label="Loading file" />
                             ) : (
                               <div
                                 className={cn(
@@ -6748,7 +6820,7 @@ export default function App() {
                             </h3>
                           </div>
                           <p className="max-w-xl text-[10px] leading-relaxed text-white/24">
-                            Draft Fix appears on file annotations. This PR has no file annotation to draft from.
+                            Draft Fix appears when a review comment points to a file.
                           </p>
                         </section>
                       )}
@@ -7342,11 +7414,11 @@ export default function App() {
 
               <div className="flex-1 space-y-2.5 overflow-y-auto px-5 py-4 sm:px-5 custom-scrollbar">
                 <p className="text-[13px] leading-relaxed text-white/50">
-                  DIFF uses GitHub sign-in for PR access, synced preferences, and actions you choose.
+                  DIFF uses GitHub sign-in to read pull requests and save your app state.
                 </p>
 
                 <p className="text-[11px] leading-relaxed text-white/30">
-                  Writes use your GitHub account. Optional drafts may use Gemini and stay saved until deleted.
+                  When you post, edit, or merge, it uses your GitHub account. Draft fixes may use Gemini.
                 </p>
 
                 <div className="flex flex-wrap gap-4 pt-0.5 text-[9px] font-medium uppercase tracking-[0.16em]">
