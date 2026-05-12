@@ -2808,7 +2808,7 @@ export default function App() {
           if (preferencesError && isCurrentUser) {
             if (isMissingUserPreferencesTableError(preferencesError)) {
               setPreferencesSetupHint(
-                "Run the Supabase preference migrations to enable sync.",
+                "Run the Supabase preference schema to enable sync.",
               );
             } else {
               setAuthError(preferencesError.message);
@@ -2904,7 +2904,7 @@ export default function App() {
 
       if (preferencesError) {
         if (isMissingUserPreferencesTableError(preferencesError)) {
-          setPreferencesSetupHint("Run the Supabase preference migrations to enable sync.");
+          setPreferencesSetupHint("Run the Supabase preference schema to enable sync.");
           preferencesHydratedRef.current = true;
           setPreferencesLoading(false);
           return;
@@ -5761,14 +5761,21 @@ export default function App() {
                         </>
                       )}
 
-                      <div className="space-y-1">
+                      <div
+                        className={cn(
+                          "space-y-1",
+                          selectedPull && !isPullBranchWorkspace && "min-w-[7rem]",
+                        )}
+                      >
                         <p className="text-sm font-serif italic opacity-40">
                           {isPullBranchWorkspace
                             ? `Editing ${repoFiles.length.toLocaleString()} files on ${repoTargetBranch}`
                             : selectedPull
-                            ? new Date(
-                                selectedPull.created_at,
-                              ).toLocaleDateString()
+                            ? selectedPull.created_at
+                              ? new Date(
+                                  selectedPull.created_at,
+                                ).toLocaleDateString()
+                              : "\u00A0"
                             : selectedBranch
                               ? "Comparing head against " + repoInfo?.default_branch
                               : `${repoFiles.length.toLocaleString()} files on ${repoInfo?.default_branch ?? "default branch"}`}

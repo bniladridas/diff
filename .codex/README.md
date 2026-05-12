@@ -1,9 +1,10 @@
 ## Repo Notes
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 
 Release line:
 
+- `v0.7.3` Schema Cleanup
 - `v0.7.2` Loading Cleanup
 - `v0.7.1` UI Cleanup
 - `v0.7.0` Review Drafts
@@ -33,9 +34,9 @@ Keep update and release-note copy calm, compact, and non-pushy. Prefer maintenan
 
 `VERSION` and `package.json` must match for each release.
 
-Release tags use `v`-prefixed SemVer. Example: tag `v0.7.2`, version `0.7.2`.
+Release tags use `v`-prefixed SemVer. Example: tag `v0.7.3`, version `0.7.3`.
 
-Each stable tag needs a matching release branch at the same commit. Example: `release/0.7.2` points at `v0.7.2`.
+Each stable tag needs a matching release branch at the same commit. Example: `release/0.7.3` points at `v0.7.3`.
 
 When bumping a release, update all version-bearing release files together:
 
@@ -59,7 +60,7 @@ Per-user app state syncs through `public.user_preferences`. Related migrations:
 - `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`
 - `supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql`
 
-`20260509_extend_user_preferences_graphite_theme.sql` is kept only for already-applied migration history; new databases get `graphite` from the base preferences migration.
+The base preferences migration now includes theme, default repo, recent repos, saved pulls, and saved AI drafts. Older preference migrations stay in the repo for projects that already ran them.
 
 GitHub reads and writes use the Supabase GitHub provider token when a user is signed in. The `repo read:user user:email` scopes support private PR detail reads plus comments, reviews, Code view edits and creates, branch creation/deletion, PR creation, branch updates, PR merge/squash/rebase, PR metadata edits, and labels. Saved Gemini drafts live in `user_preferences.ai_drafts` until the user deletes them.
 
@@ -75,7 +76,7 @@ Live pull refresh uses `/api/live` WebSockets on a long-running Node server. Ser
 
 Code view uses `/api/repo/tree` and `/api/repo/content`. Signed-in file edits and creates use `PUT /api/repo/content` with an explicit commit message; existing-file edits include the current file SHA, while new-file creates omit it. Branch and PR flows use `/api/repo/branch`, `/api/pulls`, `/api/pulls/:number`, `/api/pulls/:number/update-branch`, `/api/pulls/:number/merge`, `/api/pulls/:number/head-branch`, and `/api/pulls/:number/labels`. Conflict resolution and PR branch editing in Code view are same-repo only; fork PRs should stay on GitHub or switch to a future explicit fork workspace. Optional Gemini review-fix drafts use `POST /api/ai/review-fix` with `GEMINI_API_KEY`; drafts must be reviewed and committed manually. `npm run check:app` covers these route guards.
 
-The current loading cleanup release is part of `v0.7.2`.
+The current schema cleanup release is part of `v0.7.3`.
 
 The strongest local verification sequence before release is:
 

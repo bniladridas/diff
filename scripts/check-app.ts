@@ -324,7 +324,7 @@ async function checkSupabasePreferences() {
       status: isMissingAiDraftsColumn && !REQUIRE_AUTH_CHECKS ? "warn" : "fail",
       durationMs: preferencesDurationMs,
       detail: isMissingAiDraftsColumn
-        ? "ai_drafts migration pending"
+        ? "preference schema is missing ai_drafts"
         : `HTTP ${preferencesResponse.status}${preferencesText ? `: ${preferencesText.slice(0, 140)}` : ""}`,
     });
     assertCondition(

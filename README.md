@@ -15,9 +15,7 @@ GitHub writes use the signed-in user's GitHub account. Signed-in users can publi
 Setup details live in these docs:
 
 - [docs/auth/supabase-github.md](docs/auth/supabase-github.md) for Supabase and GitHub sign-in
-- [supabase/migrations/20260508_create_user_preferences.sql](supabase/migrations/20260508_create_user_preferences.sql), [supabase/migrations/20260508_extend_user_preferences_saved_state.sql](supabase/migrations/20260508_extend_user_preferences_saved_state.sql), and [supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql](supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql) for the backing preference schema
+- [supabase/migrations/20260508_create_user_preferences.sql](supabase/migrations/20260508_create_user_preferences.sql) for the backing preference schema
 - [.codex/README.md](.codex/README.md) for repo-local release and workflow notes
-
-Authenticated browser checks are also covered in [docs/auth/supabase-github.md](docs/auth/supabase-github.md).
 
 DIFF is not an official GitHub product or an official product of any repository owner whose data it reads. Keep local credentials private.

@@ -8,6 +8,17 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.7.3",
+    title: "Schema Cleanup",
+    description: "Preference setup is simpler for new projects.",
+    category: "fix",
+    details: [
+      "Keep preference columns in the base schema",
+      "Leave old migrations for existing projects",
+      "Use clearer setup messages"
+    ]
+  },
+  {
     version: "0.7.2",
     title: "Loading Cleanup",
     description: "PR screens stay steady while data loads.",

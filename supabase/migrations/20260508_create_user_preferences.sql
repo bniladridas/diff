@@ -3,6 +3,9 @@ create table if not exists public.user_preferences (
   theme text not null default 'dark' check (theme in ('dark', 'midnight', 'grey', 'graphite')),
   default_repo_owner text,
   default_repo_name text,
+  recent_repos jsonb not null default '[]'::jsonb,
+  saved_pulls jsonb not null default '[]'::jsonb,
+  ai_drafts jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
 

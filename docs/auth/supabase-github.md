@@ -12,13 +12,11 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 GEMINI_API_KEY=optional-gemini-api-key-for-draft-fixes
 ```
 
-The preference schema is required. Apply all migrations to the same Supabase project referenced by the local environment:
+The preference schema is required. Apply it to the same Supabase project referenced by the local environment:
 
 - [../../supabase/migrations/20260508_create_user_preferences.sql](../../supabase/migrations/20260508_create_user_preferences.sql)
-- [../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql](../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql)
-- [../../supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql](../../supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql)
 
-The migrations create `public.user_preferences`, enable row-level security, add saved state columns, include the available themes, and store saved AI drafts. `20260509_extend_user_preferences_graphite_theme.sql` remains in the repo only for existing migration history.
+The migration creates `public.user_preferences`, enables row-level security, includes the available themes, and stores saved app state and AI drafts. Older preference migrations stay in the repo for projects that already ran them.
 
 On GitHub, create an OAuth App, not a GitHub App. In Supabase, open `Authentication` -> `Providers`, expand GitHub, and copy the callback URL. Use your app URL as the OAuth homepage URL and the Supabase callback URL as the authorization callback URL. Then copy the OAuth client ID and secret back into Supabase.
 
@@ -34,7 +32,7 @@ For repositories owned by an organization, the signed-in user must authorize the
 
 ## Troubleshooting
 
-If sign-in works but preference sync fails, the Supabase project likely does not have the required schema. Apply the migrations listed above to the project referenced by `VITE_SUPABASE_URL`, then refresh and sign in again if needed.
+If sign-in works but preference sync fails, the Supabase project likely does not have the required schema. Apply the preference migration listed above to the project referenced by `VITE_SUPABASE_URL`, then refresh and sign in again if needed.
 
 The browser e2e verifier can seed a real Supabase session from the running app. In local development, sign in normally and run this in the browser console:
 
