@@ -15,7 +15,7 @@ Authenticated GitHub writes require the signed-in user's GitHub OAuth approval. 
 Setup and operational detail live in dedicated docs:
 
 - [docs/auth/supabase-github.md](docs/auth/supabase-github.md) for Supabase and GitHub OAuth configuration
-- [supabase/migrations/20260508_create_user_preferences.sql](supabase/migrations/20260508_create_user_preferences.sql), [supabase/migrations/20260508_extend_user_preferences_saved_state.sql](supabase/migrations/20260508_extend_user_preferences_saved_state.sql), [supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql](supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql), and [supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql](supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql) for the backing preference schema
+- [supabase/migrations/20260508_create_user_preferences.sql](supabase/migrations/20260508_create_user_preferences.sql), [supabase/migrations/20260508_extend_user_preferences_saved_state.sql](supabase/migrations/20260508_extend_user_preferences_saved_state.sql), and [supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql](supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql) for the backing preference schema
 - [.codex/README.md](.codex/README.md) for repo-local release and workflow notes
 
 The authenticated browser e2e flow is documented in [docs/auth/supabase-github.md](docs/auth/supabase-github.md), including how to seed a real Supabase session into `npm run check:e2e`.

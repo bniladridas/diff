@@ -1,6 +1,6 @@
 create table if not exists public.user_preferences (
   user_id uuid primary key references auth.users (id) on delete cascade,
-  theme text not null default 'dark' check (theme in ('dark', 'midnight', 'grey')),
+  theme text not null default 'dark' check (theme in ('dark', 'midnight', 'grey', 'graphite')),
   default_repo_owner text,
   default_repo_name text,
   updated_at timestamptz not null default timezone('utc'::text, now())

@@ -55,8 +55,9 @@ Per-user app state syncs through `public.user_preferences`. Related migrations:
 
 - `supabase/migrations/20260508_create_user_preferences.sql`
 - `supabase/migrations/20260508_extend_user_preferences_saved_state.sql`
-- `supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql`
 - `supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql`
+
+`20260509_extend_user_preferences_graphite_theme.sql` is kept only for already-applied migration history; new databases get `graphite` from the base preferences migration.
 
 GitHub reads and writes use the Supabase GitHub provider token when a user is signed in. The `repo read:user user:email` scopes support private PR detail reads plus comments, reviews, Code view edits and creates, branch creation/deletion, PR creation, branch updates, PR merge/squash/rebase, PR metadata edits, and labels. Saved Gemini drafts live in `user_preferences.ai_drafts` until the user deletes them.
 

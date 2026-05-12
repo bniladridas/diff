@@ -16,10 +16,9 @@ The preference schema is required. Apply all migrations to the same Supabase pro
 
 - [../../supabase/migrations/20260508_create_user_preferences.sql](../../supabase/migrations/20260508_create_user_preferences.sql)
 - [../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql](../../supabase/migrations/20260508_extend_user_preferences_saved_state.sql)
-- [../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql](../../supabase/migrations/20260509_extend_user_preferences_graphite_theme.sql)
 - [../../supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql](../../supabase/migrations/20260512_extend_user_preferences_ai_drafts.sql)
 
-The migrations create `public.user_preferences`, enable row-level security, add saved state columns, allow the graphite theme, and store saved AI drafts.
+The migrations create `public.user_preferences`, enable row-level security, add saved state columns, include the available themes, and store saved AI drafts. `20260509_extend_user_preferences_graphite_theme.sql` remains in the repo only for existing migration history.
 
 On GitHub, create an OAuth App, not a GitHub App. In Supabase, open `Authentication` -> `Providers`, expand GitHub, and copy the callback URL. Use your app URL as the OAuth homepage URL and the Supabase callback URL as the authorization callback URL. Then copy the OAuth client ID and secret back into Supabase.
 
