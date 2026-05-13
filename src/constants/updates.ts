@@ -8,6 +8,17 @@ export interface AppUpdate {
 
 export const APP_UPDATES: AppUpdate[] = [
   {
+    version: "0.7.4",
+    title: "Check Logs",
+    description: "Check run logs stay steady while refreshing.",
+    category: "fix",
+    details: [
+      "Keep current check details during polling",
+      "Avoid repeated log loading states",
+      "Clear stale loading state when switching checks"
+    ]
+  },
+  {
     version: "0.7.3",
     title: "Schema Cleanup",
     description: "Preference setup is simpler for new projects.",

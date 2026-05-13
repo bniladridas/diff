@@ -1087,8 +1087,10 @@ export default function App() {
   const [loadingRunDetail, setLoadingRunDetail] = useState(false);
   const [errorRunDetail, setErrorRunDetail] = useState<string | null>(null);
   const [runLogs, setRunLogs] = useState<string | null>(null);
+  const [runLogsFetchedForId, setRunLogsFetchedForId] = useState<number | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [checkDetailTab, setCheckDetailTab] = useState<"steps" | "logs">("steps");
+  const lastSelectedRunIdRef = useRef<number | null>(null);
   const [liveLastUpdate, setLiveLastUpdate] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"diff" | "discussion" | "checks" | "timeline">("diff");
   const [loading, setLoading] = useState(true);
@@ -2609,12 +2611,24 @@ export default function App() {
 
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
+    let cancelled = false;
 
     if (selectedRunId) {
       const run = checkRuns.find((r) => r.id === selectedRunId);
       if (!run) {
         setSelectedRunId(null);
         return;
+      }
+
+      const isNewRunSelection = lastSelectedRunIdRef.current !== selectedRunId;
+      lastSelectedRunIdRef.current = selectedRunId;
+      if (isNewRunSelection) {
+        setSelectedRunDetail(null);
+        setRunLogs(null);
+        setRunLogsFetchedForId(null);
+        setLoadingLogs(false);
+        setLoadingRunDetail(false);
+        setErrorRunDetail(null);
       }
 
       const fetchLogs = async (jobId: number) => {
@@ -2626,12 +2640,15 @@ export default function App() {
           );
           if (response.ok) {
             const text = await response.text();
-            setRunLogs(text);
+            if (!cancelled) setRunLogs(text);
           }
         } catch (error) {
           console.error("Error fetching logs:", error);
         } finally {
-          setLoadingLogs(false);
+          if (!cancelled) {
+            setRunLogsFetchedForId(selectedRunId);
+            setLoadingLogs(false);
+          }
         }
       };
 
@@ -2645,11 +2662,13 @@ export default function App() {
           );
           if (response.ok) {
             const data = await response.json();
+            if (cancelled) return;
             setSelectedRunDetail(data);
             if (typeof data.job_id === "number") {
               await fetchLogs(data.job_id);
             } else {
               setRunLogs(null);
+              setRunLogsFetchedForId(selectedRunId);
             }
 
             // If it's now completed, we should probably stop polling or do one last fetch
@@ -2658,14 +2677,16 @@ export default function App() {
             }
           } else {
             const errData = await response.json();
+            if (cancelled) return;
             setErrorRunDetail(errData.error || "Failed to fetch run details from GitHub");
             setSelectedRunDetail(run);
           }
         } catch (error) {
+          if (cancelled) return;
           setErrorRunDetail(error instanceof Error ? error.message : "Network error while fetching check details");
           setSelectedRunDetail(run);
         } finally {
-          setLoadingRunDetail(false);
+          if (!cancelled) setLoadingRunDetail(false);
         }
       };
 
@@ -2673,6 +2694,8 @@ export default function App() {
         setSelectedRunDetail(run);
         setLoadingRunDetail(false);
         setRunLogs(null);
+        setRunLogsFetchedForId(run.id);
+        setLoadingLogs(false);
       } else {
         fetchRunDetail();
 
@@ -2684,11 +2707,16 @@ export default function App() {
         }
       }
     } else {
+      lastSelectedRunIdRef.current = null;
       setSelectedRunDetail(null);
       setRunLogs(null);
+      setRunLogsFetchedForId(null);
+      setLoadingLogs(false);
+      setLoadingRunDetail(false);
     }
 
     return () => {
+      cancelled = true;
       if (interval) clearInterval(interval);
     };
   }, [selectedRunId, checkRuns, currentOwner, currentRepo]);
@@ -6977,6 +7005,9 @@ export default function App() {
                         {(() => {
                           const run = checkRuns.find(r => r.id === selectedRunId);
                           if (!run) return null;
+                          const hasCurrentRunDetail = selectedRunDetail?.id === run.id;
+                          const isInitialLogsLoad =
+                            loadingLogs && !runLogs && runLogsFetchedForId !== run.id;
 
                           return (
                             <>
@@ -7053,7 +7084,7 @@ export default function App() {
 
                                   <div className="relative">
                                     <div className="flex flex-wrap items-center gap-6 lg:gap-12 py-6 lg:py-8 justify-center lg:justify-start">
-                                      {loadingRunDetail ? (
+                                      {loadingRunDetail && !hasCurrentRunDetail ? (
                                         <div className="flex-1 flex items-center justify-center opacity-10">
                                           <RefreshCw className="w-3 h-3 animate-spin mr-3" />
                                           <span className="text-[9px] uppercase tracking-widest font-medium">Resolving...</span>
@@ -7232,7 +7263,7 @@ export default function App() {
                                             <CircleSlash className="w-4 h-4" />
                                             <p className="text-[10px] uppercase tracking-widest font-medium">Commit Status</p>
                                           </div>
-                                        ) : loadingRunDetail ? (
+                                        ) : loadingRunDetail && !hasCurrentRunDetail ? (
                                           <div className="py-12 flex flex-col items-center justify-center space-y-4 opacity-20">
                                             <RefreshCw className="w-6 h-6 animate-spin" />
                                             <p className="text-[8px] uppercase tracking-widest font-medium">Fetching details...</p>
@@ -7319,19 +7350,11 @@ export default function App() {
                                       </div>
 
                                       <div className="bg-transparent border-l border-white/5 relative group min-w-0">
-                                        <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 flex gap-2 max-w-[calc(100%-1.5rem)]">
-                                          {loadingLogs && (
-                                            <div className="px-2 py-1 border border-white/5 rounded flex items-center gap-2">
-                                              <RefreshCw className="w-2.5 h-2.5 animate-spin text-white/10" />
-                                              <span className="text-[8px] uppercase tracking-widest font-medium text-white/10">Streaming...</span>
-                                            </div>
-                                          )}
-                                        </div>
                                         <div className="flex flex-col">
                                           <div className="p-4 sm:p-6 lg:p-8 font-mono text-[11px] leading-relaxed text-white/30 overflow-x-auto whitespace-pre-wrap break-words overflow-y-auto custom-scrollbar min-h-[320px] sm:min-h-[400px] max-h-[700px] min-w-0">
                                             {runLogs ? (
                                               runLogs
-                                            ) : loadingLogs ? (
+                                            ) : isInitialLogsLoad ? (
                                               <div className="flex flex-col items-center justify-center py-20 space-y-4 opacity-10">
                                                 <RefreshCw className="w-8 h-8 animate-spin" />
                                                 <p className="text-[9px] uppercase tracking-widest font-medium text-white/5">Fetching output...</p>
